@@ -152,15 +152,15 @@ inline bool aiMatrix3x3t<TReal>::operator!= (const aiMatrix4x4t<TReal>& m) const
 template<typename TReal>
 inline bool aiMatrix3x3t<TReal>::Equal(const aiMatrix4x4t<TReal>& m, TReal epsilon) const {
     return
-        std::abs(a1 - m.a1) <= epsilon &&
-        std::abs(a2 - m.a2) <= epsilon &&
-        std::abs(a3 - m.a3) <= epsilon &&
-        std::abs(b1 - m.b1) <= epsilon &&
-        std::abs(b2 - m.b2) <= epsilon &&
-        std::abs(b3 - m.b3) <= epsilon &&
-        std::abs(c1 - m.c1) <= epsilon &&
-        std::abs(c2 - m.c2) <= epsilon &&
-        std::abs(c3 - m.c3) <= epsilon;
+        math::fabs(a1 - m.a1) <= epsilon &&
+        math::fabs(a2 - m.a2) <= epsilon &&
+        math::fabs(a3 - m.a3) <= epsilon &&
+        math::fabs(b1 - m.b1) <= epsilon &&
+        math::fabs(b2 - m.b2) <= epsilon &&
+        math::fabs(b3 - m.b3) <= epsilon &&
+        math::fabs(c1 - m.c1) <= epsilon &&
+        math::fabs(c2 - m.c2) <= epsilon &&
+        math::fabs(c3 - m.c3) <= epsilon;
 }
 
 // ------------------------------------------------------------------------------------------------

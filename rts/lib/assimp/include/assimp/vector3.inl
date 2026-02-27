@@ -185,9 +185,9 @@ AI_FORCE_INLINE bool aiVector3t<TReal>::operator!= (const aiVector3t<TReal>& oth
 template<typename TReal>
 AI_FORCE_INLINE bool aiVector3t<TReal>::Equal(const aiVector3t<TReal>& other, TReal epsilon) const {
     return
-        std::abs(x - other.x) <= epsilon &&
-        std::abs(y - other.y) <= epsilon &&
-        std::abs(z - other.z) <= epsilon;
+        math::fabs(x - other.x) <= epsilon &&
+        math::fabs(y - other.y) <= epsilon &&
+        math::fabs(z - other.z) <= epsilon;
 }
 // ------------------------------------------------------------------------------------------------
 template <typename TReal>

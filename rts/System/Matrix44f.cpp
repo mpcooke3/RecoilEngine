@@ -10,8 +10,12 @@
 #include <algorithm>
 #include <cstring>
 
+#if defined(__aarch64__) || defined(__arm64__)
+#include "lib/sse2neon/sse2neon.h"
+#else
 #include <xmmintrin.h>
 #include <emmintrin.h>
+#endif
 
 CR_BIND(CMatrix44f, )
 

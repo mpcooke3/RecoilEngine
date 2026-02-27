@@ -13,8 +13,11 @@ inline int __bsfd (int mask)
 	_BitScanForward(&index, mask);
 	return index;
 }
-#elif defined(__GNUC__)
+#elif defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 #include <x86intrin.h>
+#elif defined(__GNUC__) && defined(__aarch64__)
+// ARM64: __bsfd equivalent is __builtin_ctz (count trailing zeros)
+inline int __bsfd(int mask) { return __builtin_ctz(mask); }
 #else
 #error no bsfd intrinsic currently set
 #endif

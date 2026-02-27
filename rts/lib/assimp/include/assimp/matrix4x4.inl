@@ -350,22 +350,22 @@ inline bool aiMatrix4x4t<TReal>::operator!= (const aiMatrix4x4t<TReal>& m) const
 template<typename TReal>
 inline bool aiMatrix4x4t<TReal>::Equal(const aiMatrix4x4t<TReal>& m, TReal epsilon) const {
     return
-        std::abs(a1 - m.a1) <= epsilon &&
-        std::abs(a2 - m.a2) <= epsilon &&
-        std::abs(a3 - m.a3) <= epsilon &&
-        std::abs(a4 - m.a4) <= epsilon &&
-        std::abs(b1 - m.b1) <= epsilon &&
-        std::abs(b2 - m.b2) <= epsilon &&
-        std::abs(b3 - m.b3) <= epsilon &&
-        std::abs(b4 - m.b4) <= epsilon &&
-        std::abs(c1 - m.c1) <= epsilon &&
-        std::abs(c2 - m.c2) <= epsilon &&
-        std::abs(c3 - m.c3) <= epsilon &&
-        std::abs(c4 - m.c4) <= epsilon &&
-        std::abs(d1 - m.d1) <= epsilon &&
-        std::abs(d2 - m.d2) <= epsilon &&
-        std::abs(d3 - m.d3) <= epsilon &&
-        std::abs(d4 - m.d4) <= epsilon;
+        math::fabs(a1 - m.a1) <= epsilon &&
+        math::fabs(a2 - m.a2) <= epsilon &&
+        math::fabs(a3 - m.a3) <= epsilon &&
+        math::fabs(a4 - m.a4) <= epsilon &&
+        math::fabs(b1 - m.b1) <= epsilon &&
+        math::fabs(b2 - m.b2) <= epsilon &&
+        math::fabs(b3 - m.b3) <= epsilon &&
+        math::fabs(b4 - m.b4) <= epsilon &&
+        math::fabs(c1 - m.c1) <= epsilon &&
+        math::fabs(c2 - m.c2) <= epsilon &&
+        math::fabs(c3 - m.c3) <= epsilon &&
+        math::fabs(c4 - m.c4) <= epsilon &&
+        math::fabs(d1 - m.d1) <= epsilon &&
+        math::fabs(d2 - m.d2) <= epsilon &&
+        math::fabs(d3 - m.d3) <= epsilon &&
+        math::fabs(d4 - m.d4) <= epsilon;
 }
 
 // ----------------------------------------------------------------------------------------

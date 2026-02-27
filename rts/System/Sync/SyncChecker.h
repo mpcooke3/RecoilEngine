@@ -33,9 +33,13 @@ class CSyncChecker {
 		 * Keeps a running checksum over all assignments to synced variables.
 		 */
 		static unsigned GetChecksum() { return g_checksum; }
+		static int GetFrameNum() { return syncFrameNum; }
+		static void SetFrameNum(int f) { syncFrameNum = f; }
 		static void NewFrame();
 		static void debugSyncCheckThreading();
 		static void Sync(const void* p, unsigned size);
+		// Cross-arch desync trace: writes ops for specific frames to /tmp/sync_trace_out.txt
+		static void TraceOp(const void* p, unsigned size, const char* msg);
 		#ifdef SYNC_HISTORY
 		static std::tuple<unsigned, unsigned, unsigned*> GetFrameHistory(unsigned rewindFrames);
 		static std::pair<unsigned, unsigned*> GetHistory() { return std::make_pair(nextHistoryIndex, logs.data()); };
@@ -48,6 +52,7 @@ class CSyncChecker {
 		 * The sync checksum
 		 */
 		static unsigned g_checksum;
+		static int syncFrameNum;
 
 		/**
 		 * @brief in synced code

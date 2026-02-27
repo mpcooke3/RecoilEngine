@@ -615,6 +615,10 @@ void CGame::ClientReadNet()
 				msgProcTimeLeft -= 1000.0f;
 				lastSimFrameNetPacketTime = spring_gettime();
 
+#ifdef SYNCCHECK
+				// gs->frameNum is N-1 here; SimFrame() increments to N
+				CSyncChecker::SetFrameNum(gs->frameNum + 1);
+#endif
 				SimFrame();
 
 #ifdef SYNCCHECK

@@ -50,6 +50,7 @@ namespace Sync {
 		unsigned int crc = CSyncChecker::GetChecksum();
 		fprintf(stderr, "[Sync::%s] msg=%s chksum=%u\n", __func__, msg, crc);
 	#endif
+		CSyncChecker::TraceOp(p, size, msg);
 #endif
 	}
 

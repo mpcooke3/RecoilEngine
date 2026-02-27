@@ -8,9 +8,13 @@
 // This cannot be included in the header file (SyncChecker.h) because include conflicts will occur.
 #include "System/Threading/ThreadPool.h"
 
+#include <cstdio>
+#include <cstring>
+
 
 unsigned CSyncChecker::g_checksum;
 int CSyncChecker::inSyncedCode;
+int CSyncChecker::syncFrameNum = -1;
 
 void CSyncChecker::NewFrame()
 {
@@ -39,6 +43,49 @@ void CSyncChecker::Sync(const void* p, unsigned size)
 #ifdef SYNC_HISTORY
 	LogHistory();
 #endif // SYNC_HISTORY
+}
+
+void CSyncChecker::TraceOp(const void* p, unsigned size, const char* msg)
+{
+	const int frame = syncFrameNum;
+	if (!((frame >= 0 && frame <= 2) || (frame >= 21419 && frame <= 21421)))
+		return;
+
+	static FILE* tf = nullptr;
+	static int seqNum = 0;
+
+	if (tf == nullptr) {
+		tf = fopen("/tmp/sync_trace_out.txt", "w");
+		if (tf == nullptr)
+			return;
+		setvbuf(tf, nullptr, _IOLBF, 0);
+	}
+
+	const unsigned int crc = g_checksum;
+	if (size == sizeof(float)) {
+		float val;
+		memcpy(&val, p, sizeof(float));
+		fprintf(tf, "[ST] %d f=%d op=%s chk=%08x val=%a\n", seqNum, frame, msg, crc, val);
+	} else if (size == sizeof(int)) {
+		int val;
+		memcpy(&val, p, sizeof(int));
+		fprintf(tf, "[ST] %d f=%d op=%s chk=%08x ival=%d\n", seqNum, frame, msg, crc, val);
+	} else if (size == sizeof(short)) {
+		short val;
+		memcpy(&val, p, sizeof(short));
+		fprintf(tf, "[ST] %d f=%d op=%s chk=%08x sval=%d\n", seqNum, frame, msg, crc, val);
+	} else {
+		fprintf(tf, "[ST] %d f=%d op=%s chk=%08x sz=%u\n", seqNum, frame, msg, crc, size);
+	}
+	++seqNum;
+
+	// Flush and close after last traced frame to ensure output is complete
+	if (frame == 21421) {
+		static int closeCountdown = 100000; // allow some ops in last frame
+		if (--closeCountdown <= 0) {
+			fflush(tf);
+		}
+	}
 }
 
 #ifdef SYNC_HISTORY

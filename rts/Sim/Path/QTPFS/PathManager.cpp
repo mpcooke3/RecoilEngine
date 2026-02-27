@@ -789,7 +789,7 @@ void QTPFS::PathManager::Update() {
 			int updatedBlocks = nodeLayersMapDamageTrack.mapChangeTrackers[layerNum].damageQueue.size();
 			{
 				constexpr int BLOCKS_TO_UPDATE = 16;
-				const int progressiveUpdates = std::ceil(updatedBlocks * (1.f / (BLOCKS_TO_UPDATE<<3)) * modInfo.pfUpdateRateScale);
+				const int progressiveUpdates = math::ceil(updatedBlocks * (1.f / (BLOCKS_TO_UPDATE<<3)) * modInfo.pfUpdateRateScale);
 				constexpr int MIN_BLOCKS_TO_UPDATE = 0;
 				constexpr int MAX_BLOCKS_TO_UPDATE = std::max<int>(BLOCKS_TO_UPDATE, MIN_BLOCKS_TO_UPDATE);
 

@@ -1335,7 +1335,7 @@ float CWeapon::GetStaticRange2D(const CWeapon* w, const WeaponDef* wd, float mod
 		} break;
 		case WEAPON_LASER_PROJECTILE: {
 			// emulate LaserCannon::UpdateRange
-			baseRange = std::max(1.0f, std::floor(baseRange / projSpeed)) * projSpeed;
+			baseRange = std::max(1.0f, math::floor(baseRange / projSpeed)) * projSpeed;
 		} break;
 		case WEAPON_STARBURST_PROJECTILE: {
 			// emulate StarburstLauncher::GetRange2D

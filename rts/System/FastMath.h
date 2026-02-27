@@ -212,13 +212,15 @@ namespace fastmath {
 	template<typename T>
 	inline T floor(T f)
 	{
-		//return (f >= 0) ? int(f) : int(f+0.000001f)-1;
-		// it's about the same performance as the former code above,
-		// but without arbitratry number shenanigans
-		// Perf comparison:
-		// https://quick-bench.com/q/rwmaN33UJ4cTEViBGqQYuVgyyOc
+#if defined(__aarch64__) || defined(__arm64__)
+		// ARM64: static_cast<int>(f) has different overflow/saturation
+		// behavior than x86 CVTTSS2SI, causing cross-arch desync.
+		// Use portable streflop floor for determinism.
+		return streflop::floor(f);
+#else
 		T truncX = static_cast<T>(static_cast<int>(f));
 		return truncX - static_cast<T>(truncX > f);
+#endif
 	}
 }
 

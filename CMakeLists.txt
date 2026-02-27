@@ -447,8 +447,9 @@ if (CMAKE_COMPILER_IS_GNUCXX OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
 		# ARM64: no x86 SSE flags, disable FMA contraction for determinism
 		# SSE2NEON_PRECISE_*: exact x86 SSE emulation via sse2neon
 		#   MINMAX: NaN/signed-zero in _mm_min/max (critical for SmoothHeightMesh)
-		#   SQRT: rsqrt/sqrt Newton-Raphson refinement, DIV: rcp precision, DP: dot product NaN masking
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffp-contract=off -DSSE2NEON_PRECISE_MINMAX=1 -DSSE2NEON_PRECISE_SQRT=1 -DSSE2NEON_PRECISE_DIV=1 -DSSE2NEON_PRECISE_DP=1 -DSSE2NEON_UNDEFINED_ZERO=1")
+		#   DIV: rcp precision, DP: dot product NaN masking
+		#   NOT PRECISE_SQRT: that flag forces Newton-Raphson approximation instead of native FSQRT
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffp-contract=off -DSSE2NEON_PRECISE_MINMAX=1 -DSSE2NEON_PRECISE_DIV=1 -DSSE2NEON_PRECISE_DP=1 -DSSE2NEON_UNDEFINED_ZERO=1")
 	else ()
 		if (NOT MARCH_FLAG)
 			set(MARCH_FLAG "generic")

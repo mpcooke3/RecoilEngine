@@ -70,10 +70,10 @@ bool aiQuaterniont<TReal>::operator!= (const aiQuaterniont& o) const
 template<typename TReal>
 inline bool aiQuaterniont<TReal>::Equal(const aiQuaterniont& o, TReal epsilon) const {
     return
-        std::abs(x - o.x) <= epsilon &&
-        std::abs(y - o.y) <= epsilon &&
-        std::abs(z - o.z) <= epsilon &&
-        std::abs(w - o.w) <= epsilon;
+        math::fabs(x - o.x) <= epsilon &&
+        math::fabs(y - o.y) <= epsilon &&
+        math::fabs(z - o.z) <= epsilon &&
+        math::fabs(w - o.w) <= epsilon;
 }
 
 // ---------------------------------------------------------------------------

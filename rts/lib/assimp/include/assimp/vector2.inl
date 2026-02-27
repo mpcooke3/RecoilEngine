@@ -139,8 +139,8 @@ bool aiVector2t<TReal>::operator!= (const aiVector2t& other) const {
 template<typename TReal>
 bool aiVector2t<TReal>::Equal(const aiVector2t& other, TReal epsilon) const {
     return
-        std::abs(x - other.x) <= epsilon &&
-        std::abs(y - other.y) <= epsilon;
+        math::fabs(x - other.x) <= epsilon &&
+        math::fabs(y - other.y) <= epsilon;
 }
 
 // ------------------------------------------------------------------------------------------------

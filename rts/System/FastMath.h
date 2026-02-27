@@ -3,7 +3,10 @@
 #ifndef FASTMATH_H
 #define FASTMATH_H
 
-#ifndef DEDICATED_NOSSE
+#if defined(__aarch64__) || defined(__arm64__)
+// ARM64: no SSE, use NEON via sse2neon for compatibility or builtins
+#include "lib/sse2neon/sse2neon.h"
+#elif !defined(DEDICATED_NOSSE)
 #include <xmmintrin.h>
 #endif
 #include <cinttypes>
@@ -59,14 +62,17 @@ namespace fastmath {
 	}
 
 	/**
-	* @brief Sync-safe. Calculates square root using SSE instructions.
+	* @brief Sync-safe. Calculates square root.
 	*
-	* Slower than std::sqrtf, much faster than streflop
+	* On x86: uses SSE instructions. Slower than std::sqrtf, much faster than streflop.
+	* On ARM64: uses __builtin_sqrtf (maps to FSQRT instruction).
 	*/
 	__FORCE_ALIGN_STACK__
 	inline float sqrt_sse(float x)
 	{
-#ifndef DEDICATED_NOSSE
+#if defined(__aarch64__) || defined(__arm64__)
+		return __builtin_sqrtf(x);
+#elif !defined(DEDICATED_NOSSE)
 		__m128 vec = _mm_set_ss(x);
 		vec = _mm_sqrt_ss(vec);
 		return _mm_cvtss_f32(vec);

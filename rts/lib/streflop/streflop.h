@@ -13,21 +13,36 @@
 #define STREFLOP_H
 
 // protect against bad defines
-#if   defined(STREFLOP_SSE) && defined(STREFLOP_X87)
+// ARM64 native mode: uses portable libm (same as SSE) but with ARM64 FPU control
+#if defined(STREFLOP_ARM_NATIVE)
+    // ARM64 mode is standalone, no conflict checking needed with SSE/X87/SOFT
+    #if defined(STREFLOP_SSE) || defined(STREFLOP_X87) || defined(STREFLOP_SOFT)
+    #error STREFLOP_ARM_NATIVE must not be combined with STREFLOP_SSE, STREFLOP_X87, or STREFLOP_SOFT
+    #endif
+#elif defined(STREFLOP_SSE) && defined(STREFLOP_X87)
 #error You have to define exactly one of STREFLOP_SSE STREFLOP_X87 STREFLOP_SOFT, but you defined both STREFLOP_SSE and STREFLOP_X87
 #elif defined(STREFLOP_SSE) && defined(STREFLOP_SOFT)
 #error You have to define exactly one of STREFLOP_SSE STREFLOP_X87 STREFLOP_SOFT, but you defined both STREFLOP_SSE and STREFLOP_SOFT
 #elif defined(STREFLOP_X87) && defined(STREFLOP_SOFT)
 #error You have to define exactly one of STREFLOP_SSE STREFLOP_X87 STREFLOP_SOFT, but you defined both STREFLOP_X87 and STREFLOP_SOFT
 #elif !defined(STREFLOP_SSE) && !defined(STREFLOP_X87) && !defined(STREFLOP_SOFT)
-#error You have to define exactly one of STREFLOP_SSE STREFLOP_X87 STREFLOP_SOFT, but you defined none
+#error You have to define exactly one of STREFLOP_SSE STREFLOP_X87 STREFLOP_SOFT STREFLOP_ARM_NATIVE, but you defined none
 #endif
 
 // First, define the numerical types
 namespace streflop {
 
 // Handle the 6 cells of the configuration array. See README.txt
-#if defined(STREFLOP_SSE)
+#if defined(STREFLOP_ARM_NATIVE)
+
+    // ARM64 uses native float/double types, same as SSE mode.
+    // The portable libm provides deterministic math; FPU control
+    // ensures round-to-nearest and no FMA contraction.
+    typedef float Simple;
+    typedef double Double;
+    #undef Extended
+
+#elif defined(STREFLOP_SSE)
 
     // SSE always uses native types, denormals are handled by FPU flags
     typedef float Simple;

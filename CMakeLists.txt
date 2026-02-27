@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.27)
-cmake_policy(SET CMP0060 OLD) #causes link errors on Linux otherwise
-cmake_policy(SET CMP0065 OLD) #we need binaries compiled with -rdynamic for BARb to work (cause unknown https://github.com/beyond-all-reason/spring/issues/405)
+if (POLICY CMP0060)
+  cmake_policy(SET CMP0060 NEW)
+endif()
+if (POLICY CMP0065)
+  cmake_policy(SET CMP0065 NEW)
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -426,7 +430,11 @@ option(ENABLE_STREFLOP "build Spring with streflop support (REQUIRED FOR MULTIPL
 
 if (ENABLE_STREFLOP)
 ## note: is removed in ./AI/CMakeLists.txt since it would break AI compilation
-add_definitions(-DSTREFLOP_SSE)
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+	add_definitions(-DSTREFLOP_ARM_NATIVE)
+else ()
+	add_definitions(-DSTREFLOP_SSE)
+endif ()
 else ()
 add_definitions(-DNOT_USING_STREFLOP)
 endif ()
@@ -436,44 +444,49 @@ add_definitions(-DASIO_STANDALONE)
 
 ### compiler specific flags
 set(CXX_FLAGS_DEBUG_ADDITIONAL "")
-if (CMAKE_COMPILER_IS_GNUCXX)
+if (CMAKE_COMPILER_IS_GNUCXX OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
 	if    (UNIX)
 		check_and_add_flags(CMAKE_CXX_FLAGS "-fdiagnostics-color=auto")
 	endif (UNIX)
 
-	if (NOT MARCH_FLAG)
-		set(MARCH_FLAG "generic")
-	endif (NOT MARCH_FLAG)
+	if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+		# ARM64: no x86 SSE flags, disable FMA contraction for determinism
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffp-contract=off")
+	else ()
+		if (NOT MARCH_FLAG)
+			set(MARCH_FLAG "generic")
+		endif (NOT MARCH_FLAG)
 
-	if (MARCH_FLAG STREQUAL "")
-		set(MARCH_FLAG "generic")
-	endif (MARCH_FLAG STREQUAL "")
+		if (MARCH_FLAG STREQUAL "")
+			set(MARCH_FLAG "generic")
+		endif (MARCH_FLAG STREQUAL "")
 
-	if (NOT MARCH_FLAG STREQUAL "generic")
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=${MARCH_FLAG} -mtune=${MARCH_FLAG}") #march/mtune define SSE flags
-	else (NOT MARCH_FLAG STREQUAL "generic")
-		set(FALLBACK_SSE_FLAGS "-msse")
-		#set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mmmx")
+		if (NOT MARCH_FLAG STREQUAL "generic")
+			set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=${MARCH_FLAG} -mtune=${MARCH_FLAG}") #march/mtune define SSE flags
+		else (NOT MARCH_FLAG STREQUAL "generic")
+			set(FALLBACK_SSE_FLAGS "-msse")
+			#set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mmmx")
 
-		# worth to test if sync
-		#set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mpopcnt -mlzcnt -mabm")
+			# worth to test if sync
+			#set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mpopcnt -mlzcnt -mabm")
 
-		# disable rest
-		#set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mno-3dnow") tests showed it might sync
-		set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mno-sse3 -mno-ssse3 -mno-sse4.1 -mno-sse4.2 -mno-sse4 -mno-sse4a")
-		set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mno-avx -mno-fma -mno-fma4 -mno-xop -mno-lwp")
-		set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mno-avx2")
+			# disable rest
+			#set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mno-3dnow") tests showed it might sync
+			set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mno-sse3 -mno-ssse3 -mno-sse4.1 -mno-sse4.2 -mno-sse4 -mno-sse4a")
+			set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mno-avx -mno-fma -mno-fma4 -mno-xop -mno-lwp")
+			set(FALLBACK_SSE_FLAGS "${FALLBACK_SSE_FLAGS} -mno-avx2")
 
-		if (MARCH_BITS EQUAL 64)
-			set(FALLBACK_MARCH "x86-64")
-		else (MARCH_BITS EQUAL 64)
-			set(FALLBACK_MARCH "i686")
-		endif (MARCH_BITS EQUAL 64)
+			if (MARCH_BITS EQUAL 64)
+				set(FALLBACK_MARCH "x86-64")
+			else (MARCH_BITS EQUAL 64)
+				set(FALLBACK_MARCH "i686")
+			endif (MARCH_BITS EQUAL 64)
 
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=${FALLBACK_MARCH} -mtune=generic ${FALLBACK_SSE_FLAGS}")
-	endif (NOT MARCH_FLAG STREQUAL "generic")
+			set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=${FALLBACK_MARCH} -mtune=generic ${FALLBACK_SSE_FLAGS}")
+		endif (NOT MARCH_FLAG STREQUAL "generic")
 
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SSE_FLAGS} -mfpmath=sse") #SSE_FLAGS are now user input only
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SSE_FLAGS} -mfpmath=sse") #SSE_FLAGS are now user input only
+	endif ()
 elseif (MSVC)
 	set(MSVC_CXX_FLAGS "/arch:SSE2") #default, but still set explicitly
 	# silence warnings

@@ -9,7 +9,15 @@
 #include <atomic>
 #include <thread>
 #include <condition_variable>
+#if defined(__aarch64__) || defined(__arm64__)
+// ARM64: sse2neon.h provides _mm_pause() (maps to YIELD instruction).
+// Only include it if not already included via FastMath.h/streflop_cond.h.
+#ifndef SSE2NEON_H
+#include "lib/sse2neon/sse2neon.h"
+#endif
+#else
 #include <immintrin.h>
+#endif
 
 
 #if   defined(_WIN32)

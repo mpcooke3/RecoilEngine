@@ -21,4 +21,17 @@ if (SDL2_FOUND AND NOT TARGET SDL2::SDL2)
                         INTERFACE_INCLUDE_DIRECTORIES "${SDL2_INCLUDE_DIRS}"
                         IMPORTED_LOCATION ${SDL2_LIBRARY}
   )
+elseif (SDL2_FOUND AND TARGET SDL2::SDL2)
+  # SDL2's own config may only set include/SDL2 as the include directory,
+  # but some sources use #include <SDL2/SDL.h> style and need the parent.
+  # Ensure both include paths are present.
+  get_target_property(_sdl2_incdirs SDL2::SDL2 INTERFACE_INCLUDE_DIRECTORIES)
+  if (_sdl2_incdirs AND SDL2_INCLUDE_DIRS)
+    foreach(_dir IN LISTS SDL2_INCLUDE_DIRS)
+      if (NOT "${_dir}" IN_LIST _sdl2_incdirs)
+        set_property(TARGET SDL2::SDL2 APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${_dir}")
+      endif()
+    endforeach()
+  endif()
+  unset(_sdl2_incdirs)
 endif()

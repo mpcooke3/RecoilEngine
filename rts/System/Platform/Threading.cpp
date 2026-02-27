@@ -10,6 +10,7 @@
 	#include "System/Sync/FPUCheck.h"
 #endif
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <numeric>
@@ -491,8 +492,9 @@ namespace Threading {
 	#if defined(TRACY_ENABLE)
 		tracy::SetThreadName(newname.c_str());
 	#endif
-	#ifndef _WIN32
-		//alternative: pthread_setname_np(pthread_self(), newname.c_str());
+	#if defined(__APPLE__)
+		pthread_setname_np(newname.c_str());
+	#elif !defined(_WIN32)
 		prctl(PR_SET_NAME, newname.c_str(), 0, 0, 0);
 	#else
 		// adapted from SDL2 code

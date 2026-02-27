@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <functional>
 
-#ifndef _WIN32
+#ifdef __linux__
 	#include <sys/syscall.h>
 	#include <linux/futex.h>
 #endif
@@ -24,7 +24,7 @@
 
 InitSpringTime ist;
 
-#ifndef _WIN32
+#ifdef __linux__
 	typedef uint32_t futex;
 
 	static void futex_init(futex* m)
@@ -96,7 +96,7 @@ TEST_CASE("Mutex")
 	spring_time tSRMtx = Test("std::recursive_mutex", [&]{ srmtx.lock(); }, [&]{ srmtx.unlock(); });
 #endif
 
-#ifndef _WIN32
+#ifdef __linux__
 	futex ftx;
 	futex_init(&ftx);
 	spring_time tCrit = Test("futex", [&]{ futex_lock(&ftx); }, [&]{ futex_unlock(&ftx); });

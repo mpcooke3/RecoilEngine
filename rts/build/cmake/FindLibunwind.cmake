@@ -36,9 +36,8 @@ find_path(LIBUNWIND_PKGCONFIG_DIR libunwind.pc
 )
 
 if (APPLE AND LIBUNWIND_INCLUDE_DIR)
-  # FIXME: OS X 10.10 doesn't have static libunwind.a only dynamic libunwind.dylib;
-  #        link with "-framework Cocoa"
-  set(LIBUNWIND_LIBRARY "-framework Cocoa")
+  # macOS includes libunwind as part of the system; link against the Cocoa framework.
+  find_library(LIBUNWIND_LIBRARY Cocoa)
 else ()
   find_library(LIBUNWIND_LIBRARY NAMES unwind ${LIB_STD_ARGS})
 endif ()
@@ -48,7 +47,7 @@ if (LIBUNWIND_INCLUDE_DIR AND LIBUNWIND_LIBRARY)
   set(LIBUNWIND_DEFINITIONS "LIBUNWIND")
   set(LIBUNWIND_INCLUDE_DIRS ${LIBUNWIND_INCLUDE_DIR})
   set(LIBUNWIND_LIBRARIES ${LIBUNWIND_LIBRARY})
-  
+
   if (NOT TARGET libunwind::libunwind)
     add_library(libunwind::libunwind UNKNOWN IMPORTED)
     set_target_properties(libunwind::libunwind PROPERTIES

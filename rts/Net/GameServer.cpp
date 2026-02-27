@@ -526,6 +526,26 @@ bool CGameServer::SendDemoData(int targetFrameNum)
 				Broadcast(rpkt);
 				break;
 			}
+			case NETMSG_SYNCRESPONSE: {
+#ifdef SYNCCHECK
+				if (buf->length >= 10) {
+					unsigned char playerNum = buf->data[1];
+					int frameNum;
+					unsigned int checkSum;
+					memcpy(&frameNum, &buf->data[2], sizeof(int));
+					memcpy(&checkSum, &buf->data[6], sizeof(unsigned int));
+
+					if (playerNum < players.size()) {
+						players[playerNum].syncResponse[frameNum] = checkSum;
+
+						if (frameNum <= serverFrameNum && frameNum > players[playerNum].lastFrameResponse)
+							players[playerNum].lastFrameResponse = frameNum;
+					}
+				}
+#endif
+				Broadcast(rpkt);
+				break;
+			}
 			default: {
 				Broadcast(rpkt);
 				break;
@@ -759,6 +779,18 @@ void CGameServer::CheckSync()
 
 					PrivateMessage(p.first, spring::format(SyncError, players[p.first].name.c_str(), outstandingSyncFrame, p.second, correctChecksum));
 				}
+			}
+		}
+
+		// Log every completed sync check for debugging cross-arch determinism
+		if (demoReader != nullptr && haveCorrectChecksum) {
+			LOG("[SyncCheck] frame=%d localChecksum=%08x", outstandingSyncFrame, correctChecksum);
+			for (const GameParticipant& p: players) {
+				if (p.id == localClientNumber)
+					continue;
+				const auto it = p.syncResponse.find(outstandingSyncFrame);
+				if (it != p.syncResponse.end())
+					LOG("[SyncCheck]   player[%d] %s checksum=%08x %s", p.id, p.name.c_str(), it->second, (it->second == correctChecksum) ? "MATCH" : "DESYNC");
 			}
 		}
 

@@ -13,8 +13,8 @@
 #ifndef STREFLOP_SYSTEM_H
 #define STREFLOP_SYSTEM_H
 
-#if defined(STREFLOP_SSE) || defined(STREFLOP_X87)
-// SSE or X87 machines are little-endian
+#if defined(STREFLOP_SSE) || defined(STREFLOP_X87) || defined(STREFLOP_ARM_NATIVE)
+// SSE, X87, and ARM64 machines are little-endian
 #define __BYTE_ORDER 1234
 #define __FLOAT_WORD_ORDER 1234
 

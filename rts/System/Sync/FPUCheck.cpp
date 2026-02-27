@@ -17,10 +17,14 @@ void good_fpu_init() { LOG_L(L_WARNING, "[%s] streflop is disabled", __func__); 
 
 #else
 
-#ifdef STREFLOP_SSE
-#elif STREFLOP_X87
+#if defined(STREFLOP_SSE)
+	// x86 SSE mode
+#elif defined(STREFLOP_ARM_NATIVE)
+	// ARM64 native mode with portable libm
+#elif defined(STREFLOP_X87)
+	// x86 X87 mode
 #else
-	#error "streflop FP-math mode must be either SSE or X87"
+	#error "streflop FP-math mode must be SSE, X87, or ARM_NATIVE"
 #endif
 
 
@@ -95,7 +99,22 @@ void good_fpu_control_registers(const char* text)
 	streflop::fpenv_t fenv;
 	streflop::fegetenv(&fenv);
 
-	#if defined(STREFLOP_SSE)
+	#if defined(STREFLOP_ARM_NATIVE)
+	// ARM64: check that FPCR has round-to-nearest (RMode bits [23:22] == 0)
+	// and flush-to-zero is disabled (bit 24 == 0)
+	const uint64_t fpcr = fenv.fpcr;
+	const unsigned int rmode = (fpcr >> 22) & 0x3;
+	const bool ftz = (fpcr >> 24) & 0x1;
+
+	if (rmode != 0 || ftz) {
+		LOG_L(L_WARNING, "[%s] Sync warning: FPCR=0x%llX rmode=%u ftz=%d (\"%s\")", __func__,
+			(unsigned long long)fpcr, rmode, (int)ftz, text);
+
+		// Reset to safe state
+		streflop::streflop_init<streflop::Simple>();
+	}
+
+	#elif defined(STREFLOP_SSE)
 	const int sse_flag = fenv.sse_mode & 0xFF80;
 	const int x87_flag = fenv.x87_mode & 0x1F3F;
 
@@ -131,11 +150,19 @@ void good_fpu_control_registers(const char* text)
 
 void good_fpu_init()
 {
+#if defined(__aarch64__) || defined(__arm64__)
+	// ARM64: no CPUID/SSE detection needed
+	const unsigned int sseBits = 0;
+	const unsigned int sseFlag = 0;
+#else
 	const unsigned int sseBits = springproc::GetProcSSEBits();
 	const unsigned int sseFlag = (sseBits >> 5) & 1;
+#endif
 
 #ifdef STREFLOP_H
-	#if (defined(STREFLOP_SSE))
+	#if defined(STREFLOP_ARM_NATIVE)
+	LOG("[%s][STREFLOP_ARM_NATIVE]", __func__);
+	#elif (defined(STREFLOP_SSE))
 	LOG("[%s][STREFLOP_SSE]", __func__);
 	#elif (defined(STREFLOP_X87))
 	LOG("[%s][STREFLOP_X87]", __func__);
@@ -144,13 +171,19 @@ void good_fpu_init()
 	#endif
 #endif
 
+#if defined(__aarch64__) || defined(__arm64__)
+	LOG("\tARM64 NEON: available");
+#else
 	LOG("\tSSE 1.0 : %d,  SSE 2.0 : %d", (sseBits >> 5) & 1, (sseBits >> 4) & 1);
 	LOG("\tSSE 3.0 : %d, SSSE 3.0 : %d", (sseBits >> 3) & 1, (sseBits >> 2) & 1);
 	LOG("\tSSE 4.1 : %d,  SSE 4.2 : %d", (sseBits >> 1) & 1, (sseBits >> 0) & 1);
 	LOG("\tSSE 4.0A: %d,  SSE 5.0A: %d", (sseBits >> 8) & 1, (sseBits >> 7) & 1);
+#endif
 
 #ifdef STREFLOP_H
-	#if (defined(STREFLOP_SSE))
+	#if defined(STREFLOP_ARM_NATIVE)
+	LOG("\tUsing portable streflop libm with ARM64 FPCR control");
+	#elif (defined(STREFLOP_SSE))
 	if (sseFlag == 0)
 		throw unsupported_error("CPU is missing SSE 1.0 instruction support");
 	#elif (defined(STREFLOP_X87))
@@ -177,6 +210,12 @@ void good_fpu_init()
 #endif
 
 namespace springproc {
+#if defined(__aarch64__) || defined(__arm64__)
+	// ARM64: CPUID is x86-only; these are unused but needed for linkage
+	unsigned int GetProcMaxStandardLevel() { return 0; }
+	unsigned int GetProcMaxExtendedLevel() { return 0; }
+	unsigned int GetProcSSEBits() { return 0; }
+#else
 	unsigned int GetProcMaxStandardLevel()
 	{
 		unsigned int rEAX = 0x00000000;
@@ -232,5 +271,6 @@ namespace springproc {
 
 		return bits;
 	}
+#endif
 }
 

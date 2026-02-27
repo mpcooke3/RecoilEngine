@@ -50,7 +50,11 @@
 #include "softfloat/softfloat.h"
 #endif
 
-#if defined(_MSC_VER)
+#if defined(STREFLOP_ARM_NATIVE)
+#include <cstdint>
+#endif
+
+#if defined(_MSC_VER) && !defined(STREFLOP_ARM_NATIVE)
 #ifndef _M_IX86
 extern "C" {
     short __streflop_fstcw();
@@ -142,6 +146,8 @@ enum FPU_RoundMode {
 */
 
 // plan for portability
+// x86/x64 FPU control macros - not needed on ARM64
+#if !defined(STREFLOP_ARM_NATIVE)
 #if defined(_MSC_VER)
 #ifdef _M_IX86
 #define STREFLOP_FSTCW(cw) do { short tmp; __asm { fstcw tmp }; (cw) = tmp; } while (0)
@@ -160,6 +166,7 @@ enum FPU_RoundMode {
 #define STREFLOP_STMXCSR(cw) do { asm volatile ("stmxcsr %0" : "=m" (cw) : ); } while (0)
 #define STREFLOP_LDMXCSR(cw) do { asm volatile ("ldmxcsr %0" : : "m" (cw) ); } while (0)
 #endif // defined(_MSC_VER)
+#endif // !defined(STREFLOP_ARM_NATIVE)
 
 // Subset of all C99 functions
 
@@ -540,6 +547,137 @@ template<> inline void streflop_init<Simple>() {
 template<> inline void streflop_init<Double>() {
 }
 template<> inline void streflop_init<Extended>() {
+}
+
+#elif defined(STREFLOP_ARM_NATIVE)
+
+// ARM64 FPCR (Floating-Point Control Register) layout:
+// Bit 24: FZ  (Flush-to-Zero)
+// Bit 23:22: RMode (Rounding Mode: 00=RN, 01=RP, 10=RM, 11=RZ)
+// Bit 19: FZ16 (Flush-to-Zero for FP16)
+// Bit 12: IDE (Input Denormal Exception trap)
+// Bit 11: IXE (Inexact Exception trap)
+// Bit 10: UFE (Underflow Exception trap)
+// Bit  9: OFE (Overflow Exception trap)
+// Bit  8: DZE (Division by Zero Exception trap)
+// Bit  7: IOE (Invalid Operation Exception trap)
+
+/// Read ARM64 FPCR
+static inline uint64_t streflop_arm64_get_fpcr() {
+    uint64_t fpcr;
+    __asm__ __volatile__("mrs %0, fpcr" : "=r"(fpcr));
+    return fpcr;
+}
+
+/// Write ARM64 FPCR
+static inline void streflop_arm64_set_fpcr(uint64_t fpcr) {
+    __asm__ __volatile__("msr fpcr, %0" : : "r"(fpcr));
+}
+
+/// Raise exception for these flags (enable traps)
+inline int feraiseexcept(FPU_Exceptions excepts) {
+    uint64_t fpcr = streflop_arm64_get_fpcr();
+    // Map streflop exception flags to ARM64 FPCR trap enable bits
+    if (excepts & FE_INVALID)   fpcr |= (1u << 8);  // IOE
+    if (excepts & FE_DIVBYZERO) fpcr |= (1u << 9);  // DZE
+    if (excepts & FE_OVERFLOW)  fpcr |= (1u << 10);  // OFE
+    if (excepts & FE_UNDERFLOW) fpcr |= (1u << 11);  // UFE
+    if (excepts & FE_INEXACT)   fpcr |= (1u << 12);  // IXE
+    streflop_arm64_set_fpcr(fpcr);
+    return 0;
+}
+
+/// Clear exceptions for these flags (disable traps)
+inline int feclearexcept(int excepts) {
+    uint64_t fpcr = streflop_arm64_get_fpcr();
+    if (excepts & FE_INVALID)   fpcr &= ~(1u << 8);
+    if (excepts & FE_DIVBYZERO) fpcr &= ~(1u << 9);
+    if (excepts & FE_OVERFLOW)  fpcr &= ~(1u << 10);
+    if (excepts & FE_UNDERFLOW) fpcr &= ~(1u << 11);
+    if (excepts & FE_INEXACT)   fpcr &= ~(1u << 12);
+    streflop_arm64_set_fpcr(fpcr);
+    return 0;
+}
+
+/// Get current rounding mode
+inline int fegetround() {
+    uint64_t fpcr = streflop_arm64_get_fpcr();
+    unsigned int rmode = (fpcr >> 22) & 0x3;
+    // Map ARM64 rounding mode to streflop FE_* constants
+    switch (rmode) {
+        case 0: return FE_TONEAREST;
+        case 1: return FE_UPWARD;
+        case 2: return FE_DOWNWARD;
+        case 3: return FE_TOWARDZERO;
+    }
+    return FE_TONEAREST;
+}
+
+/// Set a new rounding mode
+inline int fesetround(FPU_RoundMode roundMode) {
+    uint64_t fpcr = streflop_arm64_get_fpcr();
+    fpcr &= ~(3u << 22); // clear rounding mode bits
+    // Map streflop FE_* constants to ARM64 rounding mode
+    switch (roundMode) {
+        case FE_TONEAREST:  fpcr |= (0u << 22); break;
+        case FE_UPWARD:     fpcr |= (1u << 22); break;
+        case FE_DOWNWARD:   fpcr |= (2u << 22); break;
+        case FE_TOWARDZERO: fpcr |= (3u << 22); break;
+    }
+    streflop_arm64_set_fpcr(fpcr);
+    return 0;
+}
+
+/// ARM64 FP environment stores the FPCR value
+struct fpenv_t {
+    uint64_t fpcr;
+};
+
+// macOS <fenv.h> defines FE_DFL_ENV as a macro; undef to use streflop's own
+#ifdef FE_DFL_ENV
+#undef FE_DFL_ENV
+#endif
+
+/// Default env. Defined in SMath.cpp
+extern fpenv_t FE_DFL_ENV;
+
+/// Get FP env into the given structure
+inline int fegetenv(fpenv_t *envp) {
+    if (!FE_DFL_ENV.fpcr) FE_DFL_ENV.fpcr = streflop_arm64_get_fpcr();
+    envp->fpcr = streflop_arm64_get_fpcr();
+    return 0;
+}
+
+/// Sets FP env from the given structure
+inline int fesetenv(const fpenv_t *envp) {
+    if (!FE_DFL_ENV.fpcr) FE_DFL_ENV.fpcr = streflop_arm64_get_fpcr();
+    streflop_arm64_set_fpcr(envp->fpcr);
+    return 0;
+}
+
+/// get env and clear exceptions
+inline int feholdexcept(fpenv_t *envp) {
+    fegetenv(envp);
+    feclearexcept(FE_ALL_EXCEPT);
+    return 0;
+}
+
+template<typename T> inline void streflop_init() {
+    // Do nothing by default, or for unknown types
+}
+
+/// Initialize the FPU for ARM64
+/// Sets round-to-nearest, clears flush-to-zero, no exception traps
+template<> inline void streflop_init<Simple>() {
+    uint64_t fpcr = streflop_arm64_get_fpcr();
+    fpcr &= ~(3u << 22);  // round-to-nearest (RMode = 00)
+    fpcr &= ~(1u << 24);  // disable flush-to-zero
+    streflop_arm64_set_fpcr(fpcr);
+}
+
+template<> inline void streflop_init<Double>() {
+    // ARM64 FPCR applies to both single and double precision
+    streflop_init<Simple>();
 }
 
 #else // defined(STREFLOP_X87)

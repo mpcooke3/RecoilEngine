@@ -133,9 +133,18 @@ if(DevIL_FOUND)
   
   if(NOT TARGET DevIL::IL)
     add_library(DevIL::IL UNKNOWN IMPORTED)
+    # IL_INCLUDE_DIR points to the directory containing il.h (e.g. /usr/include/IL).
+    # Sources use #include <IL/il.h>, so we also need the parent directory.
+    get_filename_component(_il_parent_dir "${IL_INCLUDE_DIR}" DIRECTORY)
+    set(_il_include_dirs "${IL_INCLUDE_DIR}")
+    if(NOT "${_il_parent_dir}" STREQUAL "${IL_INCLUDE_DIR}")
+      list(APPEND _il_include_dirs "${_il_parent_dir}")
+    endif()
     set_target_properties(DevIL::IL PROPERTIES
-                          INTERFACE_INCLUDE_DIRECTORIES "${IL_INCLUDE_DIR}"
+                          INTERFACE_INCLUDE_DIRECTORIES "${_il_include_dirs}"
                           IMPORTED_LOCATION "${IL_LIBRARIES}")
+    unset(_il_include_dirs)
+    unset(_il_parent_dir)
     
     if(PREFER_STATIC_LIBS)
       target_link_libraries(DevIL::IL INTERFACE PNG::PNG TIFF::TIFF JPEG::JPEG GIF::GIF)

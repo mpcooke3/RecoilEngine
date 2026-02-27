@@ -184,7 +184,8 @@ endif()
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
 
 ################################################################################
-### Matrix44f
+### Matrix44f (x86-only: uses SSE intrinsics)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
 	set(test_name Matrix44f)
 	set(test_src
 			"${CMAKE_CURRENT_SOURCE_DIR}/engine/System/testMatrix44f.cpp"
@@ -203,6 +204,7 @@ endif()
 		)
 
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+endif()
 
 ################################################################################
 ### Matrix44fRotation
@@ -391,9 +393,11 @@ endif()
 		)
 	if (WIN32)
 		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Win/CpuTopology.cpp")
-	else (WIN32)
+	elseif (APPLE)
+		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Mac/CpuTopology.cpp")
+	else ()
 		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Linux/CpuTopology.cpp")
-	endif (WIN32)
+	endif ()
 	set(test_libs
 			${WINMM_LIBRARY}
 		)
@@ -464,7 +468,32 @@ endif()
 			streflop
 			${WINMM_LIBRARY}
 		)
-	set(test_flags "-DNOT_USING_CREG -DSTREFLOP_SSE -DBUILDING_AI")
+	if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+		set(test_flags "-DNOT_USING_CREG -DSTREFLOP_ARM_NATIVE -DBUILDING_AI")
+	else ()
+		set(test_flags "-DNOT_USING_CREG -DSTREFLOP_SSE -DBUILDING_AI")
+	endif ()
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
+
+################################################################################
+### FPDeterminism
+	set(test_name FPDeterminism)
+	set(test_src
+			"${CMAKE_CURRENT_SOURCE_DIR}/engine/System/testFPDeterminism.cpp"
+			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
+			"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
+			${sources_engine_System_Threading}
+			${test_Common_sources}
+		)
+	set(test_libs
+			streflop
+			${WINMM_LIBRARY}
+		)
+	if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+		set(test_flags "-DNOT_USING_CREG -DSTREFLOP_ARM_NATIVE -DBUILDING_AI")
+	else ()
+		set(test_flags "-DNOT_USING_CREG -DSTREFLOP_SSE -DBUILDING_AI")
+	endif ()
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 
 ################################################################################

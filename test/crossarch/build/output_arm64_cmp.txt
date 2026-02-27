@@ -1,0 +1,146 @@
+=== streflop libm flt-32 cross-architecture test ===
+
+--- sqrt ---
+sqrt(0.0)                            = 0x0p+0
+sqrt(1.0)                            = 0x1p+0
+sqrt(2.0)                            = 0x1.6a09e6p+0
+sqrt(0.5)                            = 0x1.6a09e6p-1
+sqrt(4.0)                            = 0x1p+1
+sqrt(1e-20)                          = 0x1.b7cdfep-34
+sqrt(1e+20)                          = 0x1.2a05f2p+33
+sqrt(FLT_MIN_NORM)                   = 0x1p-63
+sqrt(FLT_MAX)                        = 0x1.fffffep+63
+sqrt(subnormal)                      = 0x1.6a09e6p-75
+
+--- sin ---
+sin(0.0)                             = 0x0p+0
+sin(1.0)                             = 0x1.aed54ap-1
+sin(-1.0)                            = -0x1.aed54ap-1
+sin(0.5)                             = 0x1.eaee88p-2
+sin(pi/4)                            = 0x1.6a09e8p-1
+sin(pi/2)                            = 0x1p+0
+sin(pi)                              = -0x1.777a5cp-24
+sin(3*pi)                            = -0x1.99bc5cp-26
+sin(1e6)                             = -0x1.6664b2p-2
+sin(tiny)                            = 0x1.4484cp-100
+
+--- cos ---
+cos(0.0)                             = 0x1p+0
+cos(1.0)                             = 0x1.14a28p-1
+cos(-1.0)                            = 0x1.14a28p-1
+cos(0.5)                             = 0x1.c1528p-1
+cos(pi/4)                            = 0x1.6a09e6p-1
+cos(pi/2)                            = -0x1.777a5cp-25
+cos(pi)                              = -0x1p+0
+cos(1e6)                             = 0x1.df9df8p-1
+
+--- tan ---
+tan(0.0)                             = 0x0p+0
+tan(1.0)                             = 0x1.8eb246p+0
+tan(-1.0)                            = -0x1.8eb246p+0
+tan(0.5)                             = 0x1.17b4f6p-1
+tan(pi/4)                            = 0x1p+0
+tan(pi/3)                            = 0x1.bb67bp+0
+tan(1e6)                             = -0x1.7e9768p-2
+
+--- pow ---
+pow(2.0, 10.0)                       = 0x1p+10
+pow(2.0, -1.0)                       = 0x1p-1
+pow(2.0, 0.5)                        = 0x1.6a09e6p+0
+pow(10.0, 3.0)                       = 0x1.f4p+9
+pow(0.5, 2.0)                        = 0x1p-2
+pow(1.0, 999.0)                      = 0x1p+0
+pow(0.0, 1.0)                        = 0x0p+0
+pow(0.0, 0.0)                        = 0x1p+0
+pow(-1.0, 2.0)                       = 0x1p+0
+pow(-1.0, 3.0)                       = -0x1p+0
+pow(1e10, 0.1)                       = 0x1.4p+3
+
+--- exp ---
+exp(0.0)                             = 0x1p+0
+exp(1.0)                             = 0x1.5bf0a8p+1
+exp(-1.0)                            = 0x1.78b564p-2
+exp(2.0)                             = 0x1.d8e64cp+2
+exp(10.0)                            = 0x1.5829dcp+14
+exp(-10.0)                           = 0x1.7cd79cp-15
+exp(0.001)                           = 0x1.004192p+0
+exp(88.0)                            = 0x1.f1056ep+126
+exp(-87.0)                           = 0x1.666d0ep-126
+
+--- log ---
+log(1.0)                             = 0x0p+0
+log(2.0)                             = 0x1.62e43p-1
+log(0.5)                             = -0x1.62e43p-1
+log(10.0)                            = 0x1.26bb1cp+1
+log(1e-10)                           = -0x1.7069e2p+4
+log(1e+10)                           = 0x1.7069e2p+4
+log(1.0001)                          = 0x1.a37aa2p-14
+log(FLT_MIN_NORM)                    = -0x1.5d58ap+6
+log(FLT_MAX)                         = 0x1.62e43p+6
+
+--- floor ---
+floor(0.0)                           = 0x0p+0
+floor(1.5)                           = 0x1p+0
+floor(-1.5)                          = -0x1p+1
+floor(0.999)                         = 0x0p+0
+floor(-0.001)                        = -0x1p+0
+floor(1e10)                          = 0x1.2a05f2p+33
+floor(-0.0)                          = -0x0p+0
+
+--- ceil ---
+ceil(0.0)                            = 0x0p+0
+ceil(1.5)                            = 0x1p+1
+ceil(-1.5)                           = -0x1p+0
+ceil(0.001)                          = 0x1p+0
+ceil(-0.999)                         = -0x0p+0
+ceil(1e10)                           = 0x1.2a05f2p+33
+ceil(-0.0)                           = -0x0p+0
+
+--- fabs ---
+fabs(0.0)                            = 0x0p+0
+fabs(-0.0)                           = 0x0p+0
+fabs(1.0)                            = 0x1p+0
+fabs(-1.0)                           = 0x1p+0
+fabs(-1e20)                          = 0x1.5af1d8p+66
+fabs(FLT_MIN_NORM)                   = 0x1p-126
+fabs(-subnormal)                     = 0x1p-149
+
+--- atan2 ---
+atan2(0.0, 1.0)                      = 0x0p+0
+atan2(1.0, 0.0)                      = 0x1.921fb6p+0
+atan2(1.0, 1.0)                      = 0x1.921fb6p-1
+atan2(-1.0, -1.0)                    = -0x1.2d97c8p+1
+atan2(1.0, -1.0)                     = 0x1.2d97c8p+1
+atan2(-1.0, 1.0)                     = -0x1.921fb6p-1
+atan2(0.0, -1.0)                     = 0x1.921fb6p+1
+atan2(1e10, 1e-10)                   = 0x1.921fb6p+0
+atan2(1e-10, 1e10)                   = 0x1.79ca12p-67
+
+--- acos ---
+acos(1.0)                            = 0x0p+0
+acos(0.0)                            = 0x1.921fb6p+0
+acos(-1.0)                           = 0x1.921fb6p+1
+acos(0.5)                            = 0x1.0c1524p+0
+acos(-0.5)                           = 0x1.0c1524p+1
+acos(0.999)                          = 0x1.6e62b4p-5
+acos(-0.999)                         = 0x1.8c662ap+1
+
+--- asin ---
+asin(0.0)                            = 0x0p+0
+asin(1.0)                            = 0x1.921fb6p+0
+asin(-1.0)                           = -0x1.921fb6p+0
+asin(0.5)                            = 0x1.0c1524p-1
+asin(-0.5)                           = -0x1.0c1524p-1
+asin(0.001)                          = 0x1.0624ep-10
+asin(0.999)                          = 0x1.86acap+0
+
+--- fmod ---
+fmod(5.0, 3.0)                       = 0x1p+1
+fmod(-5.0, 3.0)                      = -0x1p+1
+fmod(5.0, -3.0)                      = 0x1p+1
+fmod(10.5, 0.7)                      = 0x1.8p-23
+fmod(1e10, 3.0)                      = 0x1p+0
+fmod(1.0, 1e-20)                     = 0x1.6e3cp-72
+fmod(0.0, 1.0)                       = 0x0p+0
+
+=== Test complete ===

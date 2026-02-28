@@ -452,16 +452,50 @@ bool CWeapon::CanFire(bool ignoreAngleGood, bool ignoreTargetType, bool ignoreRe
 void CWeapon::UpdateFire()
 {
 	ZoneScoped;
-	if (!CanFire(false, false, false))
+	// Debug: detailed weapon fire logging for unit 11816 near desync
+	const bool dbgWpn = (owner->id == 11816 && gs->frameNum >= 21455 && gs->frameNum <= 21465);
+
+	if (!CanFire(false, false, false)) {
+		if (dbgWpn) {
+			LOG("[WpnFire] f=%d unit=%d CanFire=FALSE angleGood=%d salvoLeft=%d nextSalvo=%d reloadStatus=%d",
+				gs->frameNum, owner->id, (int)angleGood, salvoLeft, nextSalvo, reloadStatus);
+		}
 		return;
+	}
 
 	if (fastQueryPointUpdate) {
 		UpdateWeaponPieces(false);
 		UpdateWeaponVectors();
-	} 
+	}
 
-	if (!TryTarget(currentTargetPos, currentTarget, true))
+	if (dbgWpn) {
+		LOG("[WpnFire] f=%d unit=%d CanFire=TRUE muzzlePos=(%a,%a,%a) tgtPos=(%a,%a,%a)",
+			gs->frameNum, owner->id,
+			weaponMuzzlePos.x, weaponMuzzlePos.y, weaponMuzzlePos.z,
+			currentTargetPos.x, currentTargetPos.y, currentTargetPos.z);
+		// Log TryTarget sub-checks
+		const bool testTarget = TestTarget(currentTargetPos, currentTarget);
+		const bool testRange = TestRange(currentTargetPos, currentTarget);
+		const float groundH = CGround::GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z);
+		const bool groundOk = !(weaponMuzzlePos.y < groundH);
+		LOG("[WpnFire] f=%d unit=%d TestTarget=%d TestRange=%d groundOk=%d (muzzY=%a groundH=%a) aimFromPos=(%a,%a,%a)",
+			gs->frameNum, owner->id, (int)testTarget, (int)testRange, (int)groundOk,
+			weaponMuzzlePos.y, groundH,
+			aimFromPos.x, aimFromPos.y, aimFromPos.z);
+		if (testRange) {
+			const float heightDiff = currentTargetPos.y - aimFromPos.y;
+			const float targetDist = aimFromPos.SqDistance2D(currentTargetPos);
+			LOG("[WpnFire] f=%d unit=%d range detail: heightDiff=%a targetDist=%a range=%a cylinderTgt=%a",
+				gs->frameNum, owner->id, heightDiff, targetDist, range, weaponDef->cylinderTargeting);
+		}
+	}
+
+	if (!TryTarget(currentTargetPos, currentTarget, true)) {
+		if (dbgWpn) {
+			LOG("[WpnFire] f=%d unit=%d TryTarget=FALSE (weapon did NOT fire)", gs->frameNum, owner->id);
+		}
 		return;
+	}
 
 	// pre-check if we got enough resources (so CobBlockShot gets only called when really possible to shoot)
 	if (!weaponDef->stockpile && !owner->HaveResources(weaponDef->cost))
@@ -940,20 +974,51 @@ bool CWeapon::TryTarget(const float3 tgtPos, const SWeaponTarget& trg, bool preF
 	RECOIL_DETAILED_TRACY_ZONE;
 	assert(GetLeadTargetPos(trg).SqDistance(tgtPos) < Square(250.0f));
 
-	if (!TestTarget(tgtPos, trg))
+	const bool dbgTT = (owner->id == 11816 && gs->frameNum >= 21455 && gs->frameNum <= 21465 && preFire);
+
+	if (!TestTarget(tgtPos, trg)) {
+		if (dbgTT) LOG("[TryTarget] f=%d unit=%d FAIL=TestTarget", gs->frameNum, owner->id);
 		return false;
+	}
 
 	// auto-targeted units are allowed to be out of range
 	// (UpdateFire will still block firing at such units)
-	if (!trg.isAutoTarget && !TestRange(tgtPos, trg))
+	if (!trg.isAutoTarget && !TestRange(tgtPos, trg)) {
+		if (dbgTT) {
+			const float heightDiff = tgtPos.y - aimFromPos.y;
+			const float targetDist = aimFromPos.SqDistance2D(tgtPos);
+			float wRange = 0.0f;
+			if (trg.type == Target_Pos || weaponDef->cylinderTargeting < 0.01f) {
+				wRange = GetRange2D(0.0f, heightDiff * weaponDef->heightmod);
+			} else {
+				if ((weaponDef->cylinderTargeting * range) > (math::fabsf(heightDiff) * weaponDef->heightmod))
+					wRange = GetRange2D(0.0f, 0.0f);
+			}
+			LOG("[TryTarget] f=%d unit=%d FAIL=TestRange targetDist=%a wRange2=%a diff=%a",
+				gs->frameNum, owner->id, targetDist, wRange * wRange,
+				targetDist - wRange * wRange);
+		}
 		return false;
+	}
 
 	// no LOF if aim-position is below ground (not in HFLOF, is overridden)
-	if (preFire && (weaponMuzzlePos.y < CGround::GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z)))
+	if (preFire && (weaponMuzzlePos.y < CGround::GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z))) {
+		if (dbgTT) LOG("[TryTarget] f=%d unit=%d FAIL=GroundCheck muzzleY=%a groundH=%a",
+			gs->frameNum, owner->id, weaponMuzzlePos.y,
+			CGround::GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z));
 		return false;
+	}
+
+	const bool lofResult = HaveFreeLineOfFire(GetAimFromPos(preFire), tgtPos, trg);
+	if (dbgTT) {
+		LOG("[TryTarget] f=%d unit=%d LOF=%d aimFrom=(%a,%a,%a) tgt=(%a,%a,%a)",
+			gs->frameNum, owner->id, (int)lofResult,
+			GetAimFromPos(preFire).x, GetAimFromPos(preFire).y, GetAimFromPos(preFire).z,
+			tgtPos.x, tgtPos.y, tgtPos.z);
+	}
 
 	// TODO: add a forcedUserTarget (forced-fire mode enabled with CTRL e.g.) and skip the tests below
-	return (HaveFreeLineOfFire(GetAimFromPos(preFire), tgtPos, trg));
+	return lofResult;
 }
 
 

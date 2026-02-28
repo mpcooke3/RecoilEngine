@@ -226,6 +226,11 @@ private:
 	/////////////////// sync stuff ///////////////////
 #ifdef SYNCCHECK
 	std::set<int> outstandingSyncFrames;
+	// Cross-arch desync debug: bidirectional checksum storage for deferred comparison
+	std::map<int, unsigned int> demoPeerChecksums;  // frame -> demo player checksum
+	std::map<int, unsigned int> localClientChecksums; // frame -> local client checksum
+	int firstDemoDesyncFrame = -1;
+	void CompareDemoSync(int frameNum, unsigned int localChk, unsigned int demoChk);
 #endif
 
 	/////////////////// game status variables ///////////////////

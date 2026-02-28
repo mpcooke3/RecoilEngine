@@ -373,7 +373,7 @@ void CUnitHandler::SlowUpdateUnits()
 	updateBoundingVolumeList.clear();
 	{
 		ZoneScopedN("Sim::Unit::SlowUpdateST");
-		const bool logPerUnit = (gs->frameNum >= 21455 && gs->frameNum <= 21465);
+		const bool logPerUnit = (gs->frameNum >= 21440);
 		for (size_t i = idxBeg; i < idxEnd; ++i) {
 			CUnit* unit = activeUnits[i];
 			const uint64_t rngPre = logPerUnit ? gsRNG.GetCallCount() : 0;
@@ -418,7 +418,7 @@ void CUnitHandler::UpdateUnits()
 {
 	SCOPED_TIMER("Sim::Unit::Update");
 
-	const bool logPerUnit = (gs->frameNum >= 21455 && gs->frameNum <= 21465);
+	const bool logPerUnit = (gs->frameNum >= 21440);
 	size_t activeUnitCount = activeUnits.size();
 	for (size_t i = 0; i < activeUnitCount; ++i) {
 		CUnit* unit = activeUnits[i];
@@ -465,7 +465,7 @@ void CUnitHandler::UpdateUnitWeapons()
 	}
 	{
 		SCOPED_TIMER("Sim::Unit::Weapon");
-		const bool logPerUnit = (gs->frameNum >= 21455 && gs->frameNum <= 21465);
+		const bool logPerUnit = (gs->frameNum >= 21440);
 		for (activeUpdateUnit = 0; activeUpdateUnit < activeUnits.size(); ++activeUpdateUnit) {
 			const uint64_t rngPre = logPerUnit ? gsRNG.GetCallCount() : 0;
 			activeUnits[activeUpdateUnit]->UpdateWeapons();
@@ -504,7 +504,7 @@ void CUnitHandler::Update()
 	const uint64_t rng7 = gsRNG.GetCallCount();
 
 	// Log sub-phase RNG consumption near desync zone
-	if (gs->frameNum >= 21455 && gs->frameNum <= 21465) {
+	if (gs->frameNum >= 21440) {
 		LOG("[UnitHandler] f=%d del=%llu move=%llu qdel=%llu los=%llu slow=%llu upd=%llu wpn=%llu total=%llu",
 			gs->frameNum,
 			(unsigned long long)(rng1-rng0), (unsigned long long)(rng2-rng1),

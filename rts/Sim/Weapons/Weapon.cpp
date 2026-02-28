@@ -274,6 +274,17 @@ void CWeapon::UpdateWeaponErrorVector()
 		errorVector = newErrorVector;
 }
 
+void CWeapon::AimScriptFinished(bool retCode)
+{
+	const bool prevAngleGood = angleGood;
+	angleGood = retCode;
+
+	// Log AimWeapon callback result for unit 11816
+	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440) {
+		LOG("[AimCB] f=%d retCode=%d angleGood: %d->%d", gs->frameNum, (int)retCode, (int)prevAngleGood, (int)angleGood);
+	}
+}
+
 void CWeapon::UpdateWeaponVectors()
 {
 	ZoneScoped;
@@ -289,6 +300,60 @@ void CWeapon::UpdateWeaponVectors()
 	if (aimFromPos.y < CGround::GetHeightReal(aimFromPos.x, aimFromPos.z)) {
 		aimFromPos = owner->pos + UpVector * 10;
 	}
+
+	// Comprehensive piece transform evolution logging for unit 11816
+	// NOTE: SyncedFloat3 members (frontdir/rightdir/updir) MUST be cast to (float) for variadic LOG
+	if (owner->id == 11816 && weaponNum == 0 && (gs->frameNum % 100 == 0 || gs->frameNum >= 21440)) {
+		LOG("[PieceEvo] f=%d muzzlePos=(%a,%a,%a) aimFrom=(%a,%a,%a) relMuzzle=(%a,%a,%a) relAim=(%a,%a,%a) ownerPos=(%a,%a,%a) front=(%a,%a,%a) right=(%a,%a,%a) up=(%a,%a,%a) wDir=(%a,%a,%a) aimPc=%d mzlPc=%d",
+			gs->frameNum,
+			weaponMuzzlePos.x, weaponMuzzlePos.y, weaponMuzzlePos.z,
+			aimFromPos.x, aimFromPos.y, aimFromPos.z,
+			relWeaponMuzzlePos.x, relWeaponMuzzlePos.y, relWeaponMuzzlePos.z,
+			relAimFromPos.x, relAimFromPos.y, relAimFromPos.z,
+			owner->pos.x, owner->pos.y, owner->pos.z,
+			(float)owner->frontdir.x, (float)owner->frontdir.y, (float)owner->frontdir.z,
+			(float)owner->rightdir.x, (float)owner->rightdir.y, (float)owner->rightdir.z,
+			(float)owner->updir.x, (float)owner->updir.y, (float)owner->updir.z,
+			weaponDir.x, weaponDir.y, weaponDir.z,
+			aimFromPiece, muzzlePiece);
+
+		// Log piece animation state (rotation/position) and model-space matrix hash
+		if (owner->script->PieceExists(muzzlePiece)) {
+			const LocalModelPiece* mzlP = owner->script->GetScriptLocalModelPiece(muzzlePiece);
+			const float3 mzlRot = mzlP->GetRotation();
+			const float3 mzlPos = mzlP->GetPosition();
+			const CMatrix44f& mzlMat = mzlP->GetModelSpaceMatrix();
+			// Hash the 16 matrix floats for compact comparison
+			unsigned int mzlMatHash = 0;
+			for (int i = 0; i < 16; ++i) {
+				unsigned int val; memcpy(&val, &mzlMat.m[i], sizeof(val));
+				mzlMatHash ^= val + 0x9e3779b9 + (mzlMatHash << 6) + (mzlMatHash >> 2);
+			}
+			LOG("[PieceAnim] f=%d mzlPiece=%d rot=(%a,%a,%a) pos=(%a,%a,%a) matHash=%08x mat00=%a mat12=%a mat13=%a mat14=%a",
+				gs->frameNum, muzzlePiece,
+				mzlRot.x, mzlRot.y, mzlRot.z,
+				mzlPos.x, mzlPos.y, mzlPos.z,
+				mzlMatHash,
+				mzlMat.m[0], mzlMat.m[12], mzlMat.m[13], mzlMat.m[14]);
+		}
+		if (owner->script->PieceExists(aimFromPiece) && aimFromPiece != muzzlePiece) {
+			const LocalModelPiece* aimP = owner->script->GetScriptLocalModelPiece(aimFromPiece);
+			const float3 aimRot = aimP->GetRotation();
+			const float3 aimPos2 = aimP->GetPosition();
+			const CMatrix44f& aimMat = aimP->GetModelSpaceMatrix();
+			unsigned int aimMatHash = 0;
+			for (int i = 0; i < 16; ++i) {
+				unsigned int val; memcpy(&val, &aimMat.m[i], sizeof(val));
+				aimMatHash ^= val + 0x9e3779b9 + (aimMatHash << 6) + (aimMatHash >> 2);
+			}
+			LOG("[PieceAnim] f=%d aimPiece=%d rot=(%a,%a,%a) pos=(%a,%a,%a) matHash=%08x mat00=%a mat12=%a mat13=%a mat14=%a",
+				gs->frameNum, aimFromPiece,
+				aimRot.x, aimRot.y, aimRot.z,
+				aimPos2.x, aimPos2.y, aimPos2.z,
+				aimMatHash,
+				aimMat.m[0], aimMat.m[12], aimMat.m[13], aimMat.m[14]);
+		}
+	}
 }
 
 
@@ -299,6 +364,19 @@ void CWeapon::UpdateWantedDir()
 		wantedDir = (currentTargetPos - aimFromPos).SafeNormalize();
 	} else {
 		wantedDir = owner->frontdir;
+	}
+
+	// Log wantedDir, currentTargetPos, aimFromPos for unit 11816
+	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440) {
+		const float3 diff = currentTargetPos - aimFromPos;
+		const float sql = diff.SqLength();
+		LOG("[WantedDir] f=%d tgtPos=(%a,%a,%a) aimFrom=(%a,%a,%a) diff=(%a,%a,%a) sqLen=%a wDir=(%a,%a,%a) onlyFwd=%d",
+			gs->frameNum,
+			currentTargetPos.x, currentTargetPos.y, currentTargetPos.z,
+			aimFromPos.x, aimFromPos.y, aimFromPos.z,
+			diff.x, diff.y, diff.z, sql,
+			wantedDir.x, wantedDir.y, wantedDir.z,
+			(int)onlyForward);
 	}
 }
 
@@ -334,6 +412,15 @@ void CWeapon::Update()
 		Attack(owner->curTarget);
 
 	currentTargetPos = GetLeadTargetPos(currentTarget);
+
+	// Log currentTargetPos for unit 11816
+	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440) {
+		LOG("[TargetPos] f=%d tgtPos=(%a,%a,%a) tgtType=%d tgtUnit=%d",
+			gs->frameNum,
+			currentTargetPos.x, currentTargetPos.y, currentTargetPos.z,
+			(int)currentTarget.type,
+			(currentTarget.type == Target_Unit && currentTarget.unit) ? currentTarget.unit->id : -1);
+	}
 
 	if (!UpdateStockpile())
 		return;
@@ -408,7 +495,21 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	// for COB, this sets <angleGood> to AimWeapon's return value when finished
 	// for LUS, there exists a callout to set the <angleGood> member directly
 	// FIXME: convert CSolidObject::heading to radians too.
-	owner->script->AimWeapon(weaponNum, ClampRad(heading - owner->heading * TAANG2RAD), pitch);
+	const float aimHeading = ClampRad(heading - owner->heading * TAANG2RAD);
+
+	// Log AimWeapon inputs for unit 11816
+	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440) {
+		const short taangH = short(aimHeading * RAD2TAANG);
+		const short taangP = short(pitch * RAD2TAANG);
+		LOG("[AimWpn] f=%d heading=%a pitch=%a aimH=%a ownerHdg=%hd taangH=%hd taangP=%hd angleGood=%d wDir=(%a,%a,%a) updir=(%a,%a,%a)",
+			gs->frameNum,
+			heading, pitch, aimHeading, owner->heading,
+			taangH, taangP, (int)angleGood,
+			wantedDir.x, wantedDir.y, wantedDir.z,
+			(float)owner->updir.x, (float)owner->updir.y, (float)owner->updir.z);
+	}
+
+	owner->script->AimWeapon(weaponNum, aimHeading, pitch);
 	return true;
 }
 
@@ -452,8 +553,9 @@ bool CWeapon::CanFire(bool ignoreAngleGood, bool ignoreTargetType, bool ignoreRe
 void CWeapon::UpdateFire()
 {
 	ZoneScoped;
-	// Debug: detailed weapon fire logging for unit 11816 near desync
-	const bool dbgWpn = (owner->id == 11816 && gs->frameNum >= 21455 && gs->frameNum <= 21465);
+	// Debug: weapon fire logging for unit 11816 - periodic tracking + detailed near desync
+	const bool isUnit11816 = (owner->id == 11816 && weaponNum == 0);
+	const bool dbgWpn = isUnit11816 && (gs->frameNum >= 21450 || (gs->frameNum % 100 == 0));
 
 	if (!CanFire(false, false, false)) {
 		if (dbgWpn) {
@@ -974,7 +1076,7 @@ bool CWeapon::TryTarget(const float3 tgtPos, const SWeaponTarget& trg, bool preF
 	RECOIL_DETAILED_TRACY_ZONE;
 	assert(GetLeadTargetPos(trg).SqDistance(tgtPos) < Square(250.0f));
 
-	const bool dbgTT = (owner->id == 11816 && gs->frameNum >= 21455 && gs->frameNum <= 21465 && preFire);
+	const bool dbgTT = (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440 && preFire);
 
 	if (!TestTarget(tgtPos, trg)) {
 		if (dbgTT) LOG("[TryTarget] f=%d unit=%d FAIL=TestTarget", gs->frameNum, owner->id);

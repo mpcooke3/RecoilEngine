@@ -35,7 +35,7 @@ public:
 	bool Attack(const SWeaponTarget& newTarget);
 	void SetAttackTarget(const SWeaponTarget& newTarget); //< does no validity checks!
 	void DropCurrentTarget();
-	void AimScriptFinished(bool retCode) { angleGood = retCode; }
+	void AimScriptFinished(bool retCode);  // defined in Weapon.cpp (needs logging)
 
 	bool HaveTarget() const { return (currentTarget.type != Target_None); }
 	bool HaveUnitTarget() const { return (currentTarget.type == Target_Unit); }

@@ -540,6 +540,18 @@ bool CGameServer::SendDemoData(int targetFrameNum)
 
 						if (frameNum <= serverFrameNum && frameNum > players[playerNum].lastFrameResponse)
 							players[playerNum].lastFrameResponse = frameNum;
+
+						// Store first demo peer checksum per frame for deferred comparison
+						if (demoPeerChecksums.find(frameNum) == demoPeerChecksums.end()) {
+							demoPeerChecksums[frameNum] = checkSum;
+							// Check if local client already responded for this frame
+							const auto localIt = localClientChecksums.find(frameNum);
+							if (localIt != localClientChecksums.end()) {
+								CompareDemoSync(frameNum, localIt->second, checkSum);
+								localClientChecksums.erase(localIt);
+								demoPeerChecksums.erase(frameNum);
+							}
+						}
 					}
 				}
 #endif
@@ -604,6 +616,16 @@ void CGameServer::PrivateMessage(int playerNum, const std::string& message) {
 }
 
 
+
+void CGameServer::CompareDemoSync(int frameNum, unsigned int localChk, unsigned int demoChk)
+{
+	const bool match = (localChk == demoChk);
+	if (!match && firstDemoDesyncFrame < 0) {
+		firstDemoDesyncFrame = frameNum;
+		LOG_L(L_ERROR, "[DemoSync] *** FIRST DESYNC at frame=%d local=%08x demo=%08x ***", frameNum, localChk, demoChk);
+	}
+	LOG("[DemoSync] frame=%d local=%08x demo=%08x %s", frameNum, localChk, demoChk, match ? "MATCH" : "DESYNC");
+}
 
 void CGameServer::CheckSync()
 {
@@ -782,16 +804,10 @@ void CGameServer::CheckSync()
 			}
 		}
 
-		// Log every completed sync check for debugging cross-arch determinism
-		if (demoReader != nullptr && haveCorrectChecksum) {
+		// Log sync check - only at every 300th frame to reduce noise
+		// (detailed demo comparison is now done in ServerReadNet via demoPeerChecksums)
+		if (demoReader != nullptr && haveCorrectChecksum && (outstandingSyncFrame % 300 == 0)) {
 			LOG("[SyncCheck] frame=%d localChecksum=%08x", outstandingSyncFrame, correctChecksum);
-			for (const GameParticipant& p: players) {
-				if (p.id == localClientNumber)
-					continue;
-				const auto it = p.syncResponse.find(outstandingSyncFrame);
-				if (it != p.syncResponse.end())
-					LOG("[SyncCheck]   player[%d] %s checksum=%08x %s", p.id, p.name.c_str(), it->second, (it->second == correctChecksum) ? "MATCH" : "DESYNC");
-			}
 		}
 
 		// Remove complete sets (for which all player's checksums have been received).
@@ -1396,6 +1412,19 @@ void CGameServer::ProcessPacket(const unsigned playerNum, std::shared_ptr<const 
 
 			if (outstandingSyncFrames.find(frameNum) != outstandingSyncFrames.end())
 				p.syncResponse[frameNum] = checkSum;
+
+			// Cross-arch desync debug: bidirectional comparison
+			if (a == localClientNumber && demoReader != nullptr) {
+				const auto demoIt = demoPeerChecksums.find(frameNum);
+				if (demoIt != demoPeerChecksums.end()) {
+					// Demo checksum already available - compare now
+					CompareDemoSync(frameNum, checkSum, demoIt->second);
+					demoPeerChecksums.erase(demoIt);
+				} else {
+					// Demo checksum not yet available - store local for later
+					localClientChecksums[frameNum] = checkSum;
+				}
+			}
 
 			// update player's ping (if !defined(SYNCCHECK) this is done in NETMSG_KEYFRAME)
 			if (frameNum <= serverFrameNum && frameNum > p.lastFrameResponse)

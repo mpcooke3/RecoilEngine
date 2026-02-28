@@ -12,6 +12,8 @@
 
 #if defined(__aarch64__) || defined(__arm64__)
 #include "lib/sse2neon/sse2neon.h"
+#include "System/Log/ILog.h"
+#include <atomic>
 #else
 #include <xmmintrin.h>
 #include <emmintrin.h>
@@ -380,6 +382,49 @@ static inline void MatrixMatrixMultiplySSE(const CMatrix44f& m1, const CMatrix44
 	_mm_store_ps(&mout->md[3][0], moutc4);
 }
 
+#if defined(__aarch64__) || defined(__arm64__)
+// ARM64 self-check: compare SSE-via-sse2neon result against pure scalar result
+// to detect any FMA contraction or NEON translation differences
+static std::atomic<int> matMulCheckCount{0};
+static std::atomic<bool> matMulMismatchFound{false};
+
+static void MatrixMatrixMultiplyScalarCheck(const CMatrix44f& m1, const CMatrix44f& m2, const CMatrix44f& sseResult)
+{
+	// Only check the first 10000 multiplies, then stop to avoid perf impact
+	if (matMulCheckCount.fetch_add(1, std::memory_order_relaxed) >= 10000)
+		return;
+	if (matMulMismatchFound.load(std::memory_order_relaxed))
+		return;
+
+	// Compute scalar result (same algorithm as SSE but with plain float ops)
+	// Note: m2.m[3] and m2.m[7] are assumed to be 0 (same optimization as SSE path)
+	float scalar[16];
+	for (int col = 0; col < 4; ++col) {
+		for (int row = 0; row < 4; ++row) {
+			float sum = m1.md[0][row] * m2.md[col][0];
+			sum += m1.md[1][row] * m2.md[col][1];
+			sum += m1.md[2][row] * m2.md[col][2];
+			// Skip m2.m[3] and m2.m[7] (both 0) for cols 0,1 just like SSE path
+			if (col >= 2)
+				sum += m1.md[3][row] * m2.md[col][3];
+			scalar[col * 4 + row] = sum;
+		}
+	}
+
+	// Compare
+	for (int i = 0; i < 16; ++i) {
+		if (scalar[i] != sseResult.m[i]) {
+			matMulMismatchFound.store(true, std::memory_order_relaxed);
+			LOG_L(L_ERROR, "[MatMul] SSE-vs-SCALAR MISMATCH at element %d: sse=%a scalar=%a diff=%a",
+				i, sseResult.m[i], scalar[i], sseResult.m[i] - scalar[i]);
+			LOG_L(L_ERROR, "[MatMul]   m1 row: %a %a %a %a", m1.md[0][i%4], m1.md[1][i%4], m1.md[2][i%4], m1.md[3][i%4]);
+			LOG_L(L_ERROR, "[MatMul]   m2 col: %a %a %a %a", m2.md[i/4][0], m2.md[i/4][1], m2.md[i/4][2], m2.md[i/4][3]);
+			return;
+		}
+	}
+}
+#endif
+
 bool CMatrix44f::equals(const CMatrix44f& rhs) const
 {
 	return
@@ -411,20 +456,35 @@ CMatrix44f CMatrix44f::operator* (const CMatrix44f& m2) const
 {
 	CMatrix44f mout;
 	MatrixMatrixMultiplySSE(*this, m2, &mout);
+#if defined(__aarch64__) || defined(__arm64__)
+	MatrixMatrixMultiplyScalarCheck(*this, m2, mout);
+#endif
 	return mout;
 }
 
 
 CMatrix44f& CMatrix44f::operator>>= (const CMatrix44f& m2)
 {
+#if defined(__aarch64__) || defined(__arm64__)
+	CMatrix44f origThis = *this;
+	MatrixMatrixMultiplySSE(m2, origThis, this);
+	MatrixMatrixMultiplyScalarCheck(m2, origThis, *this);
+#else
 	MatrixMatrixMultiplySSE(m2, *this, this);
+#endif
 	return (*this);
 }
 
 
 CMatrix44f& CMatrix44f::operator<<= (const CMatrix44f& m2)
 {
+#if defined(__aarch64__) || defined(__arm64__)
+	CMatrix44f origThis = *this;
+	MatrixMatrixMultiplySSE(origThis, m2, this);
+	MatrixMatrixMultiplyScalarCheck(origThis, m2, *this);
+#else
 	MatrixMatrixMultiplySSE(*this, m2, this);
+#endif
 	return (*this);
 }
 

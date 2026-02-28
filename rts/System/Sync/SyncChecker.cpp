@@ -49,7 +49,7 @@ void CSyncChecker::Sync(const void* p, unsigned size)
 void CSyncChecker::TraceOp(const void* p, unsigned size, const char* msg)
 {
 	const int frame = syncFrameNum;
-	if (!((frame >= 0 && frame <= 2) || (frame >= 21421 && frame <= 21481)))
+	if (!((frame >= 0 && frame <= 2) || (frame >= 21440 && frame <= 21485)))
 		return;
 
 	static FILE* tf = nullptr;
@@ -96,7 +96,7 @@ void CSyncChecker::TraceOp(const void* p, unsigned size, const char* msg)
 	++seqNum;
 
 	// Flush and close after last traced frame to ensure output is complete
-	if (frame == 21421) {
+	if (frame == 21485) {
 		static int closeCountdown = 100000; // allow some ops in last frame
 		if (--closeCountdown <= 0) {
 			fflush(tf);

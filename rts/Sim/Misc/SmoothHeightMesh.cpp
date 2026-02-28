@@ -650,6 +650,33 @@ void SmoothHeightMesh::MakeSmoothMesh() {
 
 	// tempMesh should be kept inline with mesh to avoid bluring artefacts in dynamic updates
 	std::copy(mesh.begin(), mesh.end(), tempMesh.begin());
+
+	// Cross-arch debug: log sample mesh values for offline comparison
+	{
+		const int totalSize = map.x * map.y;
+		LOG("[SmoothMesh] map=(%d,%d) winSize=%d blurSize=%d totalPts=%d", map.x, map.y, winSize, blurSize, totalSize);
+		// Log 20 evenly-spaced samples
+		for (int i = 0; i < 20 && i < totalSize; ++i) {
+			const int idx = (totalSize > 20) ? (i * totalSize / 20) : i;
+			LOG("[SmoothMesh] sample[%d] idx=%d val=%a", i, idx, mesh[idx]);
+		}
+		// Log corners
+		if (totalSize > 0) {
+			LOG("[SmoothMesh] corners: [0,0]=%a [%d,0]=%a [0,%d]=%a [%d,%d]=%a",
+				mesh[0],
+				map.x-1, mesh[map.x-1],
+				map.y-1, mesh[(map.y-1) * map.x],
+				map.x-1, map.y-1, mesh[totalSize-1]);
+		}
+		// Log hash of entire mesh for quick comparison
+		unsigned int meshHash = 0;
+		for (int i = 0; i < totalSize; ++i) {
+			unsigned int val;
+			memcpy(&val, &mesh[i], sizeof(val));
+			meshHash ^= val + 0x9e3779b9 + (meshHash << 6) + (meshHash >> 2);
+		}
+		LOG("[SmoothMesh] fullHash=%08x", meshHash);
+	}
 }
 
 

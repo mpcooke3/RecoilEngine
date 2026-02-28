@@ -129,6 +129,7 @@
 #include "System/Sound/ISound.h"
 #include "System/Sound/ISoundChannels.h"
 #include "System/Sync/DumpState.h"
+#include "System/Sync/SyncChecker.h"
 #include "System/TimeProfiler.h"
 #include "System/LoadLock.h"
 
@@ -1804,6 +1805,18 @@ void CGame::SimFrame() {
 	{
 		SCOPED_SPECIAL_TIMER("Sim");
 
+#ifdef SYNCCHECK
+		// Cross-arch desync debugging: log intermediate checksums at subsystem boundaries
+		const bool logSyncMid = (gs->frameNum <= 5)
+			|| (gs->frameNum >= 21455 && gs->frameNum <= 21465)
+			|| (gs->frameNum % 1800 == 0);
+		#define SYNC_MID_LOG(tag) \
+			if (logSyncMid) { LOG("[SyncMid] frame=%d after=%s chk=%08x", gs->frameNum, tag, CSyncChecker::GetChecksum()); }
+#else
+		#define SYNC_MID_LOG(tag)
+#endif
+		SYNC_MID_LOG("FrameStart");
+
 		{
 			SCOPED_TIMER("Sim::GameFrame");
 
@@ -1814,14 +1827,25 @@ void CGame::SimFrame() {
 
 			eventHandler.GameFrame(gs->frameNum);
 		}
+		SYNC_MID_LOG("GameFrame");
 
 		helper->Update();
+		SYNC_MID_LOG("Helper");
+
 		readMap->Update();
 		smoothGround.UpdateSmoothMesh();
 		mapDamage->Update();
+		SYNC_MID_LOG("Map");
+
 		unitHandler.Update();
+		SYNC_MID_LOG("UnitHandler");
+
 		pathManager->Update();
+		SYNC_MID_LOG("PathManager");
+
 		projectileHandler.Update();
+		SYNC_MID_LOG("Projectiles");
+
 		featureHandler.Update();
 		{
 			/* The default GAME_SPEED is 30, which doesn't divide 1000 well,
@@ -1835,6 +1859,8 @@ void CGame::SimFrame() {
 			SCOPED_TIMER("Sim::Script");
 			unitScriptEngine->Tick(tickMs);
 		}
+		SYNC_MID_LOG("Features+Scripts");
+
 		envResHandler.Update();
 		losHandler->Update();
 		// dead ghosts have to be updated in sim, after los,
@@ -1842,10 +1868,14 @@ void CGame::SimFrame() {
 		// should probably be split from drawer
 		CUnitDrawer::UpdateGhostedBuildings();
 		interceptHandler.Update(false);
+		SYNC_MID_LOG("Env+LOS");
 
 		teamHandler.GameFrame(gs->frameNum);
 		playerHandler.GameFrame(gs->frameNum);
 		eventHandler.GameFramePost(gs->frameNum);
+		SYNC_MID_LOG("FrameEnd");
+
+		#undef SYNC_MID_LOG
 	}
 
 	lastSimFrameTime = spring_gettime();

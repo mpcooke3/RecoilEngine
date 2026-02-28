@@ -504,20 +504,7 @@ struct LocalModelPiece
 	void SetPosition(const float3& p) { SetPosOrRot(p, pos); } // anim-script only
 	void SetRotation(const float3& r) { SetPosOrRot(r, rot); } // anim-script only
 
-	bool SetPieceSpaceMatrix(const CMatrix44f& mat) {
-		if ((blockScriptAnims = (mat.GetX() != ZeroVector))) {
-			pieceSpaceMat = mat;
-
-			// neither of these are used outside of animation scripts, and
-			// GetEulerAngles wants a matrix created by PYR rotation while
-			// <rot> is YPR
-			// pos = mat.GetPos();
-			// rot = mat.GetEulerAnglesLftHand();
-			return true;
-		}
-
-		return false;
-	}
+	bool SetPieceSpaceMatrix(const CMatrix44f& mat);
 
 	const float3& GetPosition() const { return pos; }
 	const float3& GetRotation() const { return rot; }

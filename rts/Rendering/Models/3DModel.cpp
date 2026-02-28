@@ -4,6 +4,7 @@
 
 #include "3DModelVAO.h"
 #include "Game/GlobalUnsynced.h"
+#include "Sim/Misc/GlobalSynced.h"
 #include "Rendering/GL/myGL.h"
 #include "Sim/Misc/CollisionVolume.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
@@ -479,6 +480,14 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 	RECOIL_DETAILED_TRACY_ZONE;
 	if (blockScriptAnims)
 		return;
+
+	// Log ALL rotation changes for piece 16 (aim piece) near desync frame
+	if (&dst == &rot && scriptPieceIndex == 16 && gs != nullptr && gs->frameNum >= 21430 && gs->frameNum <= 21470) {
+		LOG("[SetRot] f=%d piece=%d old=(%a,%a,%a) new=(%a,%a,%a) blockAnims=%d",
+			gs->frameNum, scriptPieceIndex,
+			dst.x, dst.y, dst.z, src.x, src.y, src.z, (int)blockScriptAnims);
+	}
+
 	if (!dirty && !dst.same(src)) {
 		SetDirty();
 		assert(localModel);
@@ -486,6 +495,22 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 	}
 
 	dst = src;
+}
+
+
+bool LocalModelPiece::SetPieceSpaceMatrix(const CMatrix44f& mat) {
+	if ((blockScriptAnims = (mat.GetX() != ZeroVector))) {
+		// Log when piece 16 gets an external matrix override
+		if (scriptPieceIndex == 16 && gs != nullptr && gs->frameNum >= 21430 && gs->frameNum <= 21470) {
+			LOG("[SetPieceMat] f=%d piece=%d mat00=%a mat12=%a mat13=%a mat14=%a",
+				gs->frameNum, scriptPieceIndex,
+				mat.m[0], mat.m[12], mat.m[13], mat.m[14]);
+		}
+		pieceSpaceMat = mat;
+		return true;
+	}
+
+	return false;
 }
 
 

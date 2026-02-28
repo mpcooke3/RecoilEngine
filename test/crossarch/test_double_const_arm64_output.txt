@@ -1,0 +1,45 @@
+Platform: ARM64 (Clang, no -fsingle-precision-constant)
+
+=== Test 1: Multiplication by bare double vs explicit float ===
+  x1 * 0.1 vs 0.1f                        : double=0x1.17990ep-8 float=0x1.17990ep-8 diff=0 ULPs MATCH
+  x2 * 0.1 vs 0.1f                        : double=0x1.47ae14p-5 float=0x1.47ae16p-5 diff=-1 ULPs *** DIFFERS ***
+  x3 * 0.02 vs 0.02f                      : double=0x1.234568p-9 float=0x1.234568p-9 diff=0 ULPs MATCH
+
+=== Test 2: Division by bare double vs float ===
+  x1 / 3.0 vs 3.0f                        : double=0x1.d1ff18p-7 float=0x1.d1ff18p-7 diff=0 ULPs MATCH
+  x2 / 7.0 vs 7.0f                        : double=0x1.d41d42p-5 float=0x1.d41d42p-5 diff=0 ULPs MATCH
+
+=== Test 3: Addition/subtraction with bare double ===
+  x1 + 0.1 vs 0.1f                        : double=0x1.242ca2p-3 float=0x1.242ca2p-3 diff=0 ULPs MATCH
+  1.0 - x2 vs 1.0f - x2                   : double=0x1.333334p-1 float=0x1.333334p-1 diff=0 ULPs MATCH
+
+=== Test 4: Compound expressions ===
+  0.99+NF*0.02 vs 0.99f+NF*0.02f          : double=0x1.010624p+0 float=0x1.010626p+0 diff=-1 ULPs *** DIFFERS ***
+
+=== Test 5: What the compiler actually does with bare constants ===
+  max_float_lt_2 * 0.1                    : double=0x1.999998p-3 float=0x1.999998p-3 diff=0 ULPs MATCH
+  2^24 * 0.1                              : double=0x1.99999ap+20 float=0x1.99999ap+20 diff=0 ULPs MATCH
+  (1/3) * 0.7                             : double=0x1.dddddep-3 float=0x1.dddddep-3 diff=0 ULPs MATCH
+
+=== Test 6: RNG NextFloat computation ===
+  NextFloat(0 / 16777216) = 0x0p+0
+  NextFloat(1 / 16777216) = 0x1p-24
+  NextFloat(100 / 16777216) = 0x1.9p-18
+  NextFloat(1000000 / 16777216) = 0x1.e848p-5
+  NextFloat(8388608 / 16777216) = 0x1p-1
+  NextFloat(16777215 / 16777216) = 0x1.fffffep-1
+
+=== Test 7: Accumulation with bare double constants ===
+  drag: 1.0-invDrag vs 1.0f-invDrag       : double=0x1.484f6p-5 float=0x1.484f6p-5 diff=0 ULPs MATCH
+  100 frames accumulation                 : double=-0x1.0bf5cp+0 float=-0x1.0bf5cp+0 diff=0 ULPs MATCH
+
+=== Test 8: The ACTUAL test - same expressions, see if platforms differ ===
+  a * b                                    = 0x1.6c16c2p-5
+  a + b                                    = 0x1.05b05cp-1
+  a / b                                    = 0x1.cccccep+1
+  a * 0.99f + 0.01f                        = 0x1.9fbe76p-2
+  a * 0.99 + 0.01  (bare double)           = 0x1.9fbe78p-2
+  a * 0.99f + 0.01f (float)                = 0x1.9fbe76p-2
+  a*0.99+0.01: bare vs float              : double=0x1.9fbe78p-2 float=0x1.9fbe76p-2 diff=1 ULPs *** DIFFERS ***
+
+=== All tests complete ===

@@ -32,6 +32,9 @@
 #include "Sim/Path/HAPFS/PathGlobal.h"
 
 #include "System/Misc/TracyDefs.h"
+#include "System/GlobalRNG.h"
+
+extern CGlobalSyncedRNG gsRNG;
 
 #include "System/Config/ConfigHandler.h"
 CONFIG(bool, UpdateWeaponVectorsMT).defaultValue(true).safemodeValue(false).minimumValue(false).description("Enable multithreaded update of weapon vectors");
@@ -449,13 +452,31 @@ void CUnitHandler::Update()
 {
 	inUpdateCall = true;
 
+	const uint64_t rng0 = gsRNG.GetCallCount();
 	DeleteUnits();
+	const uint64_t rng1 = gsRNG.GetCallCount();
 	UpdateUnitMoveTypes();
+	const uint64_t rng2 = gsRNG.GetCallCount();
 	QueueDeleteUnits();
+	const uint64_t rng3 = gsRNG.GetCallCount();
 	UpdateUnitLosStates();
+	const uint64_t rng4 = gsRNG.GetCallCount();
 	SlowUpdateUnits();
+	const uint64_t rng5 = gsRNG.GetCallCount();
 	UpdateUnits();
+	const uint64_t rng6 = gsRNG.GetCallCount();
 	UpdateUnitWeapons();
+	const uint64_t rng7 = gsRNG.GetCallCount();
+
+	// Log sub-phase RNG consumption near desync zone
+	if (gs->frameNum >= 21455 && gs->frameNum <= 21465) {
+		LOG("[UnitHandler] f=%d del=%llu move=%llu qdel=%llu los=%llu slow=%llu upd=%llu wpn=%llu total=%llu",
+			gs->frameNum,
+			(unsigned long long)(rng1-rng0), (unsigned long long)(rng2-rng1),
+			(unsigned long long)(rng3-rng2), (unsigned long long)(rng4-rng3),
+			(unsigned long long)(rng5-rng4), (unsigned long long)(rng6-rng5),
+			(unsigned long long)(rng7-rng6), (unsigned long long)(rng7-rng0));
+	}
 
 	inUpdateCall = false;
 }

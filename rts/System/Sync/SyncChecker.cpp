@@ -48,7 +48,7 @@ void CSyncChecker::Sync(const void* p, unsigned size)
 void CSyncChecker::TraceOp(const void* p, unsigned size, const char* msg)
 {
 	const int frame = syncFrameNum;
-	if (!((frame >= 0 && frame <= 2) || (frame >= 21419 && frame <= 21421)))
+	if (!((frame >= 0 && frame <= 2) || (frame >= 21421 && frame <= 21481)))
 		return;
 
 	static FILE* tf = nullptr;

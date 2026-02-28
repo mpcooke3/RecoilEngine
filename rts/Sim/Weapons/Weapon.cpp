@@ -280,7 +280,7 @@ void CWeapon::AimScriptFinished(bool retCode)
 	angleGood = retCode;
 
 	// Log AimWeapon callback result for unit 11816
-	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440) {
+	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420) {
 		LOG("[AimCB] f=%d retCode=%d angleGood: %d->%d", gs->frameNum, (int)retCode, (int)prevAngleGood, (int)angleGood);
 	}
 }
@@ -367,7 +367,7 @@ void CWeapon::UpdateWantedDir()
 	}
 
 	// Log wantedDir, currentTargetPos, aimFromPos for unit 11816
-	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440) {
+	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420) {
 		const float3 diff = currentTargetPos - aimFromPos;
 		const float sql = diff.SqLength();
 		LOG("[WantedDir] f=%d tgtPos=(%a,%a,%a) aimFrom=(%a,%a,%a) diff=(%a,%a,%a) sqLen=%a wDir=(%a,%a,%a) onlyFwd=%d",
@@ -414,7 +414,7 @@ void CWeapon::Update()
 	currentTargetPos = GetLeadTargetPos(currentTarget);
 
 	// Log currentTargetPos for unit 11816
-	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440) {
+	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420) {
 		LOG("[TargetPos] f=%d tgtPos=(%a,%a,%a) tgtType=%d tgtUnit=%d",
 			gs->frameNum,
 			currentTargetPos.x, currentTargetPos.y, currentTargetPos.z,
@@ -498,7 +498,7 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	const float aimHeading = ClampRad(heading - owner->heading * TAANG2RAD);
 
 	// Log AimWeapon inputs for unit 11816
-	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440) {
+	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420) {
 		const short taangH = short(aimHeading * RAD2TAANG);
 		const short taangP = short(pitch * RAD2TAANG);
 		LOG("[AimWpn] f=%d heading=%a pitch=%a aimH=%a ownerHdg=%hd taangH=%hd taangP=%hd angleGood=%d wDir=(%a,%a,%a) updir=(%a,%a,%a)",

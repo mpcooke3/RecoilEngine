@@ -1807,11 +1807,12 @@ void CGame::SimFrame() {
 
 #ifdef SYNCCHECK
 		// Cross-arch desync debugging: log intermediate checksums at subsystem boundaries
+		// Log at: frames 0-5, every 300 frames, and dense around the known desync zone
 		const bool logSyncMid = (gs->frameNum <= 5)
-			|| (gs->frameNum >= 21455 && gs->frameNum <= 21465)
-			|| (gs->frameNum % 1800 == 0);
+			|| (gs->frameNum >= 21400 && gs->frameNum <= 21465)
+			|| (gs->frameNum % 300 == 0);
 		#define SYNC_MID_LOG(tag) \
-			if (logSyncMid) { LOG("[SyncMid] frame=%d after=%s chk=%08x", gs->frameNum, tag, CSyncChecker::GetChecksum()); }
+			if (logSyncMid) { LOG("[SyncMid] frame=%d after=%s chk=%08x rngCnt=%llu", gs->frameNum, tag, CSyncChecker::GetChecksum(), gsRNG.GetCallCount()); }
 #else
 		#define SYNC_MID_LOG(tag)
 #endif

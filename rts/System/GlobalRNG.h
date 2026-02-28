@@ -170,10 +170,10 @@ private:
 
 	FuncCB fcb = nullptr;
 
-	inline rng_res_type gnext_r() { return gen.next(); }
-	inline rng_res_type gnext_d() { rng_res_type R = gen.next(); fcb(0, R); return R; }
-	inline rng_res_type gbnext_r(rng_res_type N) { return gen.bnext(N); }
-	inline rng_res_type gbnext_d(rng_res_type N) { rng_res_type R = gen.bnext(N); fcb(N, R); return R; }
+	inline rng_res_type gnext_r() { ++callCount; return gen.next(); }
+	inline rng_res_type gnext_d() { ++callCount; rng_res_type R = gen.next(); fcb(0, R); return R; }
+	inline rng_res_type gbnext_r(rng_res_type N) { ++callCount; return gen.bnext(N); }
+	inline rng_res_type gbnext_d(rng_res_type N) { ++callCount; rng_res_type R = gen.bnext(N); fcb(N, R); return R; }
 
 	decltype(&CGlobalRNG::gnext_r )  gnext = &CGlobalRNG::gnext_r;
 	decltype(&CGlobalRNG::gbnext_r) gbnext = &CGlobalRNG::gbnext_r;
@@ -181,6 +181,11 @@ private:
 	// initial and last-set seed
 	rng_val_type initSeed = 0;
 	rng_val_type lastSeed = 0;
+
+public:
+	// Cross-arch desync debug: count total RNG calls to detect sequence offset
+	uint64_t callCount = 0;
+	uint64_t GetCallCount() const { return callCount; }
 };
 
 

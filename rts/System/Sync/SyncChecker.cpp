@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <execinfo.h>
 
 
 unsigned CSyncChecker::g_checksum;
@@ -77,6 +78,21 @@ void CSyncChecker::TraceOp(const void* p, unsigned size, const char* msg)
 	} else {
 		fprintf(tf, "[ST] %d f=%d op=%s chk=%08x sz=%u\n", seqNum, frame, msg, crc, size);
 	}
+	// Print stack trace at the exact divergence point
+	if (frame == 21460 && seqNum == 2566781) {
+		fprintf(tf, "[ST] === STACK TRACE at divergence point (seq=%d frame=%d) ===\n", seqNum, frame);
+		void* callstack[32];
+		int frames = backtrace(callstack, 32);
+		char** symbols = backtrace_symbols(callstack, frames);
+		if (symbols) {
+			for (int i = 0; i < frames; i++)
+				fprintf(tf, "[ST]   %s\n", symbols[i]);
+			free(symbols);
+		}
+		fprintf(tf, "[ST] === END STACK TRACE ===\n");
+		fflush(tf);
+	}
+
 	++seqNum;
 
 	// Flush and close after last traced frame to ensure output is complete

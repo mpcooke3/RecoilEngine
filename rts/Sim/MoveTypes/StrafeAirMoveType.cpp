@@ -19,6 +19,7 @@
 #include "System/SpringHash.h"
 
 #include "System/Misc/TracyDefs.h"
+#include "Sim/Misc/GlobalSynced.h"
 
 CR_BIND_DERIVED(CStrafeAirMoveType, AAirMoveType, (nullptr))
 
@@ -1114,6 +1115,32 @@ void CStrafeAirMoveType::UpdateAirPhysics(const float4& controlInputs, const flo
 			1.0f,
 			1.0f,
 		};
+
+		// Debug: log non-synced intermediates at the divergence frame
+		if (gs->frameNum == 21460) {
+			static FILE* df = nullptr;
+			if (df == nullptr) {
+				df = fopen("/tmp/airphysics_debug.txt", "w");
+				if (df) setvbuf(df, nullptr, _IOLBF, 0);
+			}
+			if (df) {
+				fprintf(df, "[AirPhys] unit=%d f=%d\n", owner->id, gs->frameNum);
+				fprintf(df, "  pos=(%a, %a, %a)\n", pos.x, pos.y, pos.z);
+				fprintf(df, "  spd=(%a, %a, %a, w=%a)\n", spd.x, spd.y, spd.z, spd.w);
+				fprintf(df, "  speedDir=(%a, %a, %a)\n", speedDir.x, speedDir.y, speedDir.z);
+				fprintf(df, "  frontdir=(%a, %a, %a)\n", float(frontdir.x), float(frontdir.y), float(frontdir.z));
+				fprintf(df, "  rightdir=(%a, %a, %a)\n", float(rightdir.x), float(rightdir.y), float(rightdir.z));
+				fprintf(df, "  updir=(%a, %a, %a)\n", float(updir.x), float(updir.y), float(updir.z));
+				fprintf(df, "  linearSpeed=%a groundHeight=%a\n", linearSpeed, groundHeight);
+				fprintf(df, "  wingDir=(%a, %a, %a)\n", wingDir.x, wingDir.y, wingDir.z);
+				fprintf(df, "  yprDeltas=(%a, %a, %a)\n", yprDeltas.x, yprDeltas.y, yprDeltas.z);
+				fprintf(df, "  frontToSpeed=%a wingDrag=%a wingAngle=%a\n", frontToSpeed, wingDrag, wingAngle);
+				fprintf(df, "  throttle=%a accRate=%a invDrag=%a\n", throttle, accRate, invDrag);
+				const float3 dragTerm = (speedDir - frontdir) * frontToSpeed;
+				fprintf(df, "  dragTerm=(%a, %a, %a)\n", dragTerm.x, dragTerm.y, dragTerm.z);
+				fprintf(df, "  wingDir.dot(spd)=%a\n", wingDir.dot(spd));
+			}
+		}
 
 		frontdir += (rightdir * yprDeltas.x * yprScales.x); // yaw
 		frontdir += (updir    * yprDeltas.y * yprScales.y); // pitch

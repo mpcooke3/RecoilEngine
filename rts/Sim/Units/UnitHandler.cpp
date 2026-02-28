@@ -373,13 +373,25 @@ void CUnitHandler::SlowUpdateUnits()
 	updateBoundingVolumeList.clear();
 	{
 		ZoneScopedN("Sim::Unit::SlowUpdateST");
+		const bool logPerUnit = (gs->frameNum >= 21455 && gs->frameNum <= 21465);
 		for (size_t i = idxBeg; i < idxEnd; ++i) {
 			CUnit* unit = activeUnits[i];
+			const uint64_t rngPre = logPerUnit ? gsRNG.GetCallCount() : 0;
 
 			unit->SanityCheck();
 			unit->SlowUpdate();
 			unit->SlowUpdateWeapons();
 			unit->SanityCheck();
+
+			if (logPerUnit) {
+				const uint64_t rngPost = gsRNG.GetCallCount();
+				if (rngPost != rngPre) {
+					LOG("[SlowUpd] f=%d unit=%d rng=%llu->%llu delta=%llu",
+						gs->frameNum, unit->id,
+						(unsigned long long)rngPre, (unsigned long long)rngPost,
+						(unsigned long long)(rngPost - rngPre));
+				}
+			}
 
 			if (!unit->isDead && unit->localModel.GetBoundariesNeedsRecalc())
 				updateBoundingVolumeList.emplace_back(unit);
@@ -406,9 +418,11 @@ void CUnitHandler::UpdateUnits()
 {
 	SCOPED_TIMER("Sim::Unit::Update");
 
+	const bool logPerUnit = (gs->frameNum >= 21455 && gs->frameNum <= 21465);
 	size_t activeUnitCount = activeUnits.size();
 	for (size_t i = 0; i < activeUnitCount; ++i) {
 		CUnit* unit = activeUnits[i];
+		const uint64_t rngPre = logPerUnit ? gsRNG.GetCallCount() : 0;
 
 		unit->SanityCheck();
 		unit->Update();
@@ -416,6 +430,16 @@ void CUnitHandler::UpdateUnits()
 		// unsynced; done on-demand when drawing unit
 		// unit->UpdateLocalModel();
 		unit->SanityCheck();
+
+		if (logPerUnit) {
+			const uint64_t rngPost = gsRNG.GetCallCount();
+			if (rngPost != rngPre) {
+				LOG("[UnitUpd] f=%d unit=%d rng=%llu->%llu delta=%llu",
+					gs->frameNum, unit->id,
+					(unsigned long long)rngPre, (unsigned long long)rngPost,
+					(unsigned long long)(rngPost - rngPre));
+			}
+		}
 
 		assert(activeUnits[i] == unit);
 	}
@@ -441,8 +465,19 @@ void CUnitHandler::UpdateUnitWeapons()
 	}
 	{
 		SCOPED_TIMER("Sim::Unit::Weapon");
+		const bool logPerUnit = (gs->frameNum >= 21455 && gs->frameNum <= 21465);
 		for (activeUpdateUnit = 0; activeUpdateUnit < activeUnits.size(); ++activeUpdateUnit) {
+			const uint64_t rngPre = logPerUnit ? gsRNG.GetCallCount() : 0;
 			activeUnits[activeUpdateUnit]->UpdateWeapons();
+			if (logPerUnit) {
+				const uint64_t rngPost = gsRNG.GetCallCount();
+				if (rngPost != rngPre) {
+					LOG("[WpnUpd] f=%d unit=%d rng=%llu->%llu delta=%llu",
+						gs->frameNum, activeUnits[activeUpdateUnit]->id,
+						(unsigned long long)rngPre, (unsigned long long)rngPost,
+						(unsigned long long)(rngPost - rngPre));
+				}
+			}
 		}
 	}
 }

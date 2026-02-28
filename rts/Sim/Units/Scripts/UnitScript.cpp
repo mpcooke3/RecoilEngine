@@ -140,7 +140,13 @@ bool CUnitScript::TurnToward(float& cur, float dest, float speed)
 		return true;
 	}
 
+	const float oldCur = cur;
 	cur = ClampRad(cur + speed * Sign(delta));
+
+	if (unit->id == 11816 && gs->frameNum >= 21440 && gs->frameNum <= 21450) {
+		LOG("[TurnTwd] f=%07d unit=%d cur=%a dest=%a speed=%a delta=%a sign=%d newCur=%a",
+			gs->frameNum, unit->id, oldCur, dest, speed, delta, (int)Sign(delta), cur);
+	}
 	return false;
 }
 
@@ -172,6 +178,39 @@ bool CUnitScript::DoSpin(float& cur, float dest, float& speed, float accel, int 
 }
 
 
+
+bool CUnitScript::TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) {
+	float3 rot = lmp.GetRotation();
+	rot[ai.axis] = ClampRad(rot[ai.axis]);
+	if (unit->id == 11816 && gs->frameNum >= 21440 && gs->frameNum <= 21470) {
+		float delta = math::fmod(ai.dest - rot[ai.axis] + math::THREEPI, math::TWOPI) - math::PI;
+		LOG("[TickTurn] f=%07d piece=%d axis=%d cur=%a dest=%a speed=%a effSpd=%a delta=%a sign=%d tickRate=%d",
+			gs->frameNum, ai.piece, ai.axis, rot[ai.axis], ai.dest, ai.speed, ai.speed / tickRate, delta, (delta > 0.0f ? 1 : -1), tickRate);
+	}
+	const bool ret = TurnToward(rot[ai.axis], ai.dest, ai.speed / tickRate);
+	if (unit->id == 11816 && gs->frameNum >= 21440 && gs->frameNum <= 21470) {
+		LOG("[TickTurnPost] f=%07d piece=%d axis=%d newCur=%a done=%d",
+			gs->frameNum, ai.piece, ai.axis, rot[ai.axis], (int)ret);
+	}
+	lmp.SetRotation(rot);
+	return ret;
+}
+
+bool CUnitScript::TickSpinAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) {
+	float3 rot = lmp.GetRotation();
+	rot[ai.axis] = ClampRad(rot[ai.axis]);
+	if (unit->id == 11816 && gs->frameNum >= 21440 && gs->frameNum <= 21470) {
+		LOG("[TickSpin] f=%07d piece=%d axis=%d cur=%a destSpd=%a speed=%a accel=%a tickRate=%d",
+			gs->frameNum, ai.piece, ai.axis, rot[ai.axis], ai.dest, ai.speed, ai.accel, tickRate);
+	}
+	const bool ret = DoSpin(rot[ai.axis], ai.dest, ai.speed, ai.accel, tickRate);
+	if (unit->id == 11816 && gs->frameNum >= 21440 && gs->frameNum <= 21470) {
+		LOG("[TickSpinPost] f=%07d piece=%d axis=%d newCur=%a newSpd=%a done=%d",
+			gs->frameNum, ai.piece, ai.axis, rot[ai.axis], ai.speed, (int)ret);
+	}
+	lmp.SetRotation(rot);
+	return ret;
+}
 
 void CUnitScript::TickAnims(int tickRate, const TickAnimFunc& tickAnimFunc, AnimContainerType& liveAnims, AnimContainerType& doneAnims) {
 	RECOIL_DETAILED_TRACY_ZONE;
@@ -380,6 +419,10 @@ void CUnitScript::AddAnim(AnimType type, int piece, int axis, float speed, float
 void CUnitScript::Spin(int piece, int axis, float speed, float accel)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+	if (unit->id == 11816 && gs->frameNum >= 21420 && gs->frameNum <= 21470) {
+		LOG("[SpinCmd] f=%07d unit=%d piece=%d axis=%d speed=%a accel=%a",
+			gs->frameNum, unit->id, piece, axis, speed, accel);
+	}
 	auto animInfoIt = FindAnim(ASpin, piece, axis);
 
 	// if we are already spinning, we may have to decelerate to the new speed
@@ -428,6 +471,10 @@ void CUnitScript::StopSpin(int piece, int axis, float decel)
 void CUnitScript::Turn(int piece, int axis, float speed, float destination)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+	if (unit->id == 11816 && gs->frameNum >= 21420 && gs->frameNum <= 21470) {
+		LOG("[TurnCmd] f=%07d unit=%d piece=%d axis=%d speed=%a rawDest=%a clampDest=%a",
+			gs->frameNum, unit->id, piece, axis, math::fabs(speed), destination, ClampRad(destination));
+	}
 	AddAnim(ATurn, piece, axis, math::fabs(speed), ClampRad(destination), 0);
 }
 
@@ -464,6 +511,10 @@ void CUnitScript::TurnNow(int piece, int axis, float destination)
 	if (!PieceExists(piece)) {
 		ShowUnitScriptError("[US::TurnNow] invalid script piece index");
 		return;
+	}
+	if (unit->id == 11816 && gs->frameNum >= 21420 && gs->frameNum <= 21470) {
+		LOG("[TurnNow] f=%07d unit=%d piece=%d axis=%d rawDest=%a clampDest=%a",
+			gs->frameNum, unit->id, piece, axis, destination, ClampRad(destination));
 	}
 	destination = ClampRad(destination);
 

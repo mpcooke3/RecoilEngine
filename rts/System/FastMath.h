@@ -234,15 +234,7 @@ namespace math {
 	inline float sqrt(float x) { return fastmath::sqrt_sse(x); }
 	inline float sqrtf(float x) { return fastmath::sqrt_sse(x); }
 	inline float isqrt(float x) {
-#if defined(__aarch64__) || defined(__arm64__)
-		// ARM64 desync hypothesis test: use exact IEEE 754 rsqrt instead of
-		// Quake fast inverse sqrt (isqrt2_nosse). The Newton-Raphson approximation
-		// may produce different results on ARM64 vs x86_64 due to compiler differences.
-		// If replacing this fixes the cross-arch desync, isqrt2_nosse is the root cause.
-		return 1.0f / __builtin_sqrtf(x);
-#else
 		return fastmath::isqrt2_nosse(x);
-#endif
 	}
 
 	using fastmath::floor;

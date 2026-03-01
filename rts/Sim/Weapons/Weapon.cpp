@@ -280,8 +280,8 @@ void CWeapon::AimScriptFinished(bool retCode)
 	angleGood = retCode;
 
 	// Log AimWeapon callback result for unit 11816
-	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420) {
-		LOG("[AimCB] f=%d retCode=%d angleGood: %d->%d", gs->frameNum, (int)retCode, (int)prevAngleGood, (int)angleGood);
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
+		LOG("[AimCB] f=%d unit=%d wpn=%d retCode=%d angleGood: %d->%d", gs->frameNum, owner->id, weaponNum, (int)retCode, (int)prevAngleGood, (int)angleGood);
 	}
 }
 
@@ -303,7 +303,7 @@ void CWeapon::UpdateWeaponVectors()
 
 	// Comprehensive piece transform evolution logging for unit 11816
 	// NOTE: SyncedFloat3 members (frontdir/rightdir/updir) MUST be cast to (float) for variadic LOG
-	if (owner->id == 11816 && weaponNum == 0 && (gs->frameNum % 100 == 0 || gs->frameNum >= 21420)) {
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[PieceEvo] f=%d muzzlePos=(%a,%a,%a) aimFrom=(%a,%a,%a) relMuzzle=(%a,%a,%a) relAim=(%a,%a,%a) ownerPos=(%a,%a,%a) front=(%a,%a,%a) right=(%a,%a,%a) up=(%a,%a,%a) wDir=(%a,%a,%a) aimPc=%d mzlPc=%d",
 			gs->frameNum,
 			weaponMuzzlePos.x, weaponMuzzlePos.y, weaponMuzzlePos.z,
@@ -401,7 +401,7 @@ void CWeapon::UpdateWantedDir()
 	}
 
 	// Log wantedDir, currentTargetPos, aimFromPos for unit 11816
-	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420) {
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		const float3 diff = currentTargetPos - aimFromPos;
 		const float sql = diff.SqLength();
 		LOG("[WantedDir] f=%d tgtPos=(%a,%a,%a) aimFrom=(%a,%a,%a) diff=(%a,%a,%a) sqLen=%a wDir=(%a,%a,%a) onlyFwd=%d",
@@ -448,9 +448,9 @@ void CWeapon::Update()
 	currentTargetPos = GetLeadTargetPos(currentTarget);
 
 	// Log currentTargetPos for unit 11816
-	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420) {
-		LOG("[TargetPos] f=%d tgtPos=(%a,%a,%a) tgtType=%d tgtUnit=%d",
-			gs->frameNum,
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
+		LOG("[TargetPos] f=%d wpn=%d tgtPos=(%a,%a,%a) tgtType=%d tgtUnit=%d",
+			gs->frameNum, weaponNum,
 			currentTargetPos.x, currentTargetPos.y, currentTargetPos.z,
 			(int)currentTarget.type,
 			(currentTarget.type == Target_Unit && currentTarget.unit) ? currentTarget.unit->id : -1);
@@ -532,15 +532,14 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	const float aimHeading = ClampRad(heading - owner->heading * TAANG2RAD);
 
 	// Log AimWeapon inputs for unit 11816
-	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420) {
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		const int16_t taangH = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(aimHeading * RAD2TAANG)));
 		const int16_t taangP = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(pitch * RAD2TAANG)));
-		LOG("[AimWpn] f=%d heading=%a pitch=%a aimH=%a ownerHdg=%hd taangH=%hd taangP=%hd angleGood=%d wDir=(%a,%a,%a) updir=(%a,%a,%a)",
-			gs->frameNum,
+		LOG("[AimWpn] f=%d unit=%d wpn=%d heading=%a pitch=%a aimH=%a ownerHdg=%hd taangH=%hd taangP=%hd angleGood=%d wDir=(%a,%a,%a)",
+			gs->frameNum, owner->id, weaponNum,
 			heading, pitch, aimHeading, owner->heading,
 			taangH, taangP, (int)angleGood,
-			wantedDir.x, wantedDir.y, wantedDir.z,
-			(float)owner->updir.x, (float)owner->updir.y, (float)owner->updir.z);
+			wantedDir.x, wantedDir.y, wantedDir.z);
 	}
 
 	owner->script->AimWeapon(weaponNum, aimHeading, pitch);
@@ -1110,7 +1109,7 @@ bool CWeapon::TryTarget(const float3 tgtPos, const SWeaponTarget& trg, bool preF
 	RECOIL_DETAILED_TRACY_ZONE;
 	assert(GetLeadTargetPos(trg).SqDistance(tgtPos) < Square(250.0f));
 
-	const bool dbgTT = (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420 && preFire);
+	const bool dbgTT = (gs->frameNum >= 28140 && gs->frameNum <= 28200 && preFire);
 
 	if (!TestTarget(tgtPos, trg)) {
 		if (dbgTT) LOG("[TryTarget] f=%d unit=%d FAIL=TestTarget", gs->frameNum, owner->id);

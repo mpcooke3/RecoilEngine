@@ -487,7 +487,7 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 
 	// Log ALL rotation changes for piece 16 (aim piece) near desync frame
 	extern int g_setRotCaller;
-	if (&dst == &rot && scriptPieceIndex == 16 && gs != nullptr && gs->frameNum >= 21430 && gs->frameNum <= 21470) {
+	if (&dst == &rot && gs != nullptr && gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[SetRot] f=%d piece=%d ptr=%p caller=%d old=(%a,%a,%a) new=(%a,%a,%a)",
 			gs->frameNum, scriptPieceIndex, (void*)this, g_setRotCaller,
 			dst.x, dst.y, dst.z, src.x, src.y, src.z);
@@ -507,7 +507,7 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 bool LocalModelPiece::SetPieceSpaceMatrix(const CMatrix44f& mat) {
 	if ((blockScriptAnims = (mat.GetX() != ZeroVector))) {
 		// Log when piece 16 gets an external matrix override
-		if (scriptPieceIndex == 16 && gs != nullptr && gs->frameNum >= 21430 && gs->frameNum <= 21470) {
+		if (gs != nullptr && gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 			LOG("[SetPieceMat] f=%d piece=%d mat00=%a mat12=%a mat13=%a mat14=%a",
 				gs->frameNum, scriptPieceIndex,
 				mat.m[0], mat.m[12], mat.m[13], mat.m[14]);

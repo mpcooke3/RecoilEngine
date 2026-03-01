@@ -1808,7 +1808,7 @@ void CGame::SimFrame() {
 #ifdef SYNCCHECK
 		// Cross-arch desync debugging: log intermediate checksums at subsystem boundaries
 		// Log only at key frames to reduce log size (every 60 frames + around desync)
-		const bool logSyncMid = (gs->frameNum % 60 == 0) || (gs->frameNum >= 21440 && gs->frameNum <= 21490);
+		const bool logSyncMid = (gs->frameNum % 60 == 0) || (gs->frameNum >= 28140 && gs->frameNum <= 28200);
 		#define SYNC_MID_LOG(tag) \
 			if (logSyncMid) { LOG("[SyncMid] frame=%d after=%s chk=%08x rngCnt=%llu", gs->frameNum, tag, CSyncChecker::GetChecksum(), gsRNG.GetCallCount()); }
 #else

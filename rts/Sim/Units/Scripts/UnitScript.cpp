@@ -143,7 +143,7 @@ bool CUnitScript::TurnToward(float& cur, float dest, float speed)
 	const float oldCur = cur;
 	cur = ClampRad(cur + speed * Sign(delta));
 
-	if (unit->id == 11816 && gs->frameNum >= 21440 && gs->frameNum <= 21450) {
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[TurnTwd] f=%07d unit=%d cur=%a dest=%a speed=%a delta=%a sign=%d newCur=%a",
 			gs->frameNum, unit->id, oldCur, dest, speed, delta, (int)Sign(delta), cur);
 	}
@@ -182,7 +182,7 @@ bool CUnitScript::DoSpin(float& cur, float dest, float& speed, float accel, int 
 bool CUnitScript::TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) {
 	float3 rot = lmp.GetRotation();
 	rot[ai.axis] = ClampRad(rot[ai.axis]);
-	if (unit->id == 11816 && gs->frameNum >= 21420 && gs->frameNum <= 21470) {
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		float delta = math::fmod(ai.dest - rot[ai.axis] + math::THREEPI, math::TWOPI) - math::PI;
 		LOG("[TickTurn] f=%07d unit=%d piece=%d axis=%d ptr=%p cur=%a dest=%a speed=%a delta=%a",
 			gs->frameNum, unit->id, ai.piece, ai.axis, (void*)&lmp, rot[ai.axis], ai.dest, ai.speed / tickRate, delta);
@@ -196,7 +196,7 @@ bool CUnitScript::TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai)
 bool CUnitScript::TickSpinAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) {
 	float3 rot = lmp.GetRotation();
 	rot[ai.axis] = ClampRad(rot[ai.axis]);
-	if (unit->id == 11816 && gs->frameNum >= 21420 && gs->frameNum <= 21470) {
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[TickSpin] f=%07d unit=%d piece=%d axis=%d ptr=%p cur=%a destSpd=%a speed=%a accel=%a",
 			gs->frameNum, unit->id, ai.piece, ai.axis, (void*)&lmp, rot[ai.axis], ai.dest, ai.speed, ai.accel);
 	}
@@ -413,7 +413,7 @@ void CUnitScript::AddAnim(AnimType type, int piece, int axis, float speed, float
 void CUnitScript::Spin(int piece, int axis, float speed, float accel)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
-	if (unit->id == 11816 && gs->frameNum >= 21420 && gs->frameNum <= 21470) {
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[SpinCmd] f=%07d unit=%d piece=%d axis=%d speed=%a accel=%a",
 			gs->frameNum, unit->id, piece, axis, speed, accel);
 	}
@@ -465,7 +465,7 @@ void CUnitScript::StopSpin(int piece, int axis, float decel)
 void CUnitScript::Turn(int piece, int axis, float speed, float destination)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
-	if (unit->id == 11816 && gs->frameNum >= 21420 && gs->frameNum <= 21470) {
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[TurnCmd] f=%07d unit=%d piece=%d axis=%d speed=%a rawDest=%a clampDest=%a",
 			gs->frameNum, unit->id, piece, axis, math::fabs(speed), destination, ClampRad(destination));
 	}
@@ -506,7 +506,7 @@ void CUnitScript::TurnNow(int piece, int axis, float destination)
 		ShowUnitScriptError("[US::TurnNow] invalid script piece index");
 		return;
 	}
-	if (unit->id == 11816 && gs->frameNum >= 21420 && gs->frameNum <= 21470) {
+	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[TurnNow] f=%07d unit=%d piece=%d axis=%d rawDest=%a clampDest=%a",
 			gs->frameNum, unit->id, piece, axis, destination, ClampRad(destination));
 	}

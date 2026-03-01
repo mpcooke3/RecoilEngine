@@ -187,6 +187,12 @@ bool CUnitScript::TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai)
 		LOG("[TickTurn] f=%07d unit=%d piece=%d axis=%d ptr=%p cur=%a dest=%a speed=%a delta=%a",
 			gs->frameNum, unit->id, ai.piece, ai.axis, (void*)&lmp, rot[ai.axis], ai.dest, ai.speed / tickRate, delta);
 	}
+	// Track unit 5415 piece=1 ALL turns (any frame)
+	if (unit->id == 5415 && ai.piece == 1) {
+		LOG("[TrackTurn] f=%07d unit=5415 piece=1 axis=%d cur=%a dest=%a speed=%a rot=(%a,%a,%a)",
+			gs->frameNum, ai.axis, rot[ai.axis], ai.dest, ai.speed / tickRate,
+			rot.x, rot.y, rot.z);
+	}
 	const bool ret = TurnToward(rot[ai.axis], ai.dest, ai.speed / tickRate);
 	{ extern int g_setRotCaller; g_setRotCaller = 1; }
 	{ extern int g_setRotUnitId; g_setRotUnitId = unit->id; }
@@ -200,6 +206,20 @@ bool CUnitScript::TickSpinAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai)
 	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[TickSpin] f=%07d unit=%d piece=%d axis=%d ptr=%p cur=%a destSpd=%a speed=%a accel=%a",
 			gs->frameNum, unit->id, ai.piece, ai.axis, (void*)&lmp, rot[ai.axis], ai.dest, ai.speed, ai.accel);
+	}
+	// Track unit 5415 piece=1 ALL spins (every frame — log every 10th)
+	if (unit->id == 5415 && ai.piece == 1) {
+		float prevZ = rot[ai.axis];
+		const bool ret = DoSpin(rot[ai.axis], ai.dest, ai.speed, ai.accel, tickRate);
+		if (gs->frameNum % 10 == 0 || gs->frameNum < 300) {
+			LOG("[TrackSpin] f=%07d unit=5415 piece=1 axis=%d prev=%a new=%a speed=%a rot=(%a,%a,%a)",
+				gs->frameNum, ai.axis, prevZ, rot[ai.axis], ai.speed,
+				rot.x, rot.y, rot.z);
+		}
+		{ extern int g_setRotCaller; g_setRotCaller = 2; }
+		{ extern int g_setRotUnitId; g_setRotUnitId = unit->id; }
+		lmp.SetRotation(rot);
+		return ret;
 	}
 	const bool ret = DoSpin(rot[ai.axis], ai.dest, ai.speed, ai.accel, tickRate);
 	{ extern int g_setRotCaller; g_setRotCaller = 2; }
@@ -419,6 +439,11 @@ void CUnitScript::Spin(int piece, int axis, float speed, float accel)
 		LOG("[SpinCmd] f=%07d unit=%d piece=%d axis=%d speed=%a accel=%a",
 			gs->frameNum, unit->id, piece, axis, speed, accel);
 	}
+	// Track unit 5415 piece=1 spin commands
+	if (unit->id == 5415 && piece == 1) {
+		LOG("[TrackSpinCmd] f=%07d unit=5415 piece=1 axis=%d speed=%a accel=%a",
+			gs->frameNum, axis, speed, accel);
+	}
 	auto animInfoIt = FindAnim(ASpin, piece, axis);
 
 	// if we are already spinning, we may have to decelerate to the new speed
@@ -449,6 +474,11 @@ void CUnitScript::Spin(int piece, int axis, float speed, float accel)
 void CUnitScript::StopSpin(int piece, int axis, float decel)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+	// Track unit 5415 piece=1 stop-spin commands
+	if (unit->id == 5415 && piece == 1) {
+		LOG("[TrackStopSpin] f=%07d unit=5415 piece=1 axis=%d decel=%a",
+			gs->frameNum, axis, decel);
+	}
 	auto animInfoIt = FindAnim(ASpin, piece, axis);
 
 	if (decel <= 0.0f) {
@@ -470,6 +500,11 @@ void CUnitScript::Turn(int piece, int axis, float speed, float destination)
 	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[TurnCmd] f=%07d unit=%d piece=%d axis=%d speed=%a rawDest=%a clampDest=%a",
 			gs->frameNum, unit->id, piece, axis, math::fabs(speed), destination, ClampRad(destination));
+	}
+	// Track unit 5415 piece=1 turn commands
+	if (unit->id == 5415 && piece == 1) {
+		LOG("[TrackTurnCmd] f=%07d unit=5415 piece=1 axis=%d speed=%a dest=%a",
+			gs->frameNum, axis, math::fabs(speed), ClampRad(destination));
 	}
 	AddAnim(ATurn, piece, axis, math::fabs(speed), ClampRad(destination), 0);
 }
@@ -511,6 +546,11 @@ void CUnitScript::TurnNow(int piece, int axis, float destination)
 	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		LOG("[TurnNow] f=%07d unit=%d piece=%d axis=%d rawDest=%a clampDest=%a",
 			gs->frameNum, unit->id, piece, axis, destination, ClampRad(destination));
+	}
+	// Track unit 5415 piece=1 ALL turn-nows (any frame)
+	if (unit->id == 5415 && piece == 1) {
+		LOG("[TrackTurnNow] f=%07d unit=5415 piece=1 axis=%d rawDest=%a clampDest=%a",
+			gs->frameNum, axis, destination, ClampRad(destination));
 	}
 	destination = ClampRad(destination);
 

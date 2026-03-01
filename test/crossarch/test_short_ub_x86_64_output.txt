@@ -1,0 +1,18 @@
+heading=  0.000000  product=       0.0  short()=     0  callinArg=     0  proper=     0  ok
+heading=  1.000000  product=   10430.4  short()= 10430  callinArg= 10430  proper= 10430  ok
+heading=  1.570796  product=   16384.0  short()= 16384  callinArg= 16384  proper= 16384  ok
+heading=  3.110177  product=   32440.3  short()= 32440  callinArg= 32440  proper= 32440  ok
+heading=  3.141593  product=   32768.0  short()=-32768  callinArg=-32768  proper=-32768  ** UB! **
+heading=  3.173009  product=   33095.7  short()=-32441  callinArg=-32441  proper=-32441  ** UB! **
+heading=  4.712389  product=   49152.0  short()=-16384  callinArg=-16384  proper=-16384  ** UB! **
+heading=  5.870830  product=   61235.0  short()= -4302  callinArg= -4302  proper= -4302  ** UB! **
+heading=  6.273185  product=   65431.7  short()=  -105  callinArg=  -105  proper=  -105  ** UB! **
+
+--- Critical test: the exact value from our logs ---
+ARM64 rawDest=0x1.77bbb8p+2 -> COB int = 61235
+x86_64 rawDest=-0x1.a63fecp-2 -> COB int = -4301
+Difference: 65536 (expected 65536 = one full rotation)
+
+--- Demonstrating the downstream divergence ---
+heading/2: ARM64=30617 (2.9354 rad), x86_64=-2150 (-0.2061 rad)
+Angle difference: 3.1415 rad (180.0 degrees) -- MASSIVE!

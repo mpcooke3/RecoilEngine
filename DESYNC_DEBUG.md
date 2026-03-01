@@ -83,13 +83,21 @@ The checksum already differs at FrameStart, meaning the divergence happened betw
 
 RNG count difference at FrameStart: x86_64 has **910 more** RNG calls, suggesting a weapon/projectile timing difference cascaded (similar pattern to Desync #1).
 
-### Suspects
-1. **`math::floor` platform difference** — `math::floor` uses `streflop::floor` on ARM64 vs integer truncation on x86_64 (`FastMath.h`). Used in `ClampRad()`. Could cause subtle angle differences in other code paths.
-2. **Other `short()` casts in MoveTypes** — Found in:
-   - `HoverAirMoveType.cpp:674,676`: `short(turnRate)` and `short(-turnRate)` — likely safe (turnRate is small)
-   - `GroundMoveType.cpp:1306`: `short(owner->heading - wantedHeading)` — both are shorts, difference could overflow
-   - `IPathController.cpp:57,59`: `short(maxTurnRate)` — likely safe
-3. **Another instance of the same `short()` UB pattern** in a code path we haven't found yet
+### Ruled Out for Desync #2
+1. **`math::floor` platform difference** — RULED OUT. `streflop::floor` is pure bit-twiddling (portable C, no platform instructions). Cross-platform test confirms identical results for all tested inputs including edge cases. The FastMath.h `floor` uses `streflop::floor` on ARM64 vs integer truncation on x86_64, but both produce the same results.
+2. **Other `short(int)` casts in MoveTypes** — RULED OUT. Integer-to-short narrowing is well-defined wrapping on ARM64 (confirmed by test). Only `short(float)` was UB.
+   - `HoverAirMoveType.cpp:674,676`: `short(turnRate)` — turnRate is float but small values, safe in practice
+   - `GroundMoveType.cpp:1306`: `short(owner->heading - wantedHeading)` — both shorts, int promotion, safe
+   - `IPathController.cpp:57,59`: `short(maxTurnRate)` — small values, safe
+3. **`int(float)` UB** — RULED OUT for normal game values. Unlike `short` (±32767), `int` range is ±2 billion. Game coordinates, angles, etc. are well within range. No `int(float)` cast in synced code operates on values anywhere near INT_MAX.
+4. **All `short(float)` casts in synced code** — FIXED. The only instances of `short(float_expr)` in synced code were the 3 in CobInstance.cpp (now fixed) and debug logging in Weapon.cpp (also fixed).
+
+### Remaining Suspects
+The root cause of desync #2 is unknown. Since it's not a type conversion issue, it may be:
+1. **A float arithmetic precision difference** — some platform-specific behavior in IEEE 754 ops we haven't found
+2. **A compiler optimization difference** — clang (ARM64) vs gcc (x86_64) generating different code for the same source
+3. **An uninitialized variable or memory layout difference** — struct padding, field ordering
+4. **A different code path taken due to #ifdef** — platform-specific branching in synced code
 
 ### Current Debug Logging State
 All debug logging is currently targeted at the old desync range (frames 21420-21470). For desync #2 we need to retarget to frames 28140-28200. Logging locations:
@@ -104,11 +112,9 @@ All debug logging is currently targeted at the old desync range (frames 21420-21
 
 ### Investigation Plan
 1. **Retarget SyncMid** to per-frame granularity between frames 28140-28200 (Game.cpp)
-2. **Retarget unit-specific logging** — we don't know which unit diverges yet; first find the exact frame via SyncMid, then narrow down by subsystem phase
-3. **Widen UnitHandler [SlowUpd] logging** to cover frames 28140-28200 to identify which unit's RNG diverges first
-4. **Investigate `math::floor` in `ClampRad`** — compare ARM64 `streflop::floor` vs x86_64 integer truncation (FastMath.h). This is the top suspect since it affects every angle computation.
-5. **Search for additional `short(float)` UB** patterns across the full codebase (not just `rts/Sim`)
-6. **Remove or disable old frame 21420-21470 logging** to reduce log noise
+2. **Retarget UnitHandler [SlowUpd] logging** to frames 28140-28200 to identify which unit's RNG diverges first
+3. **Retarget unit-specific logging** — we don't know which unit diverges yet; first find the exact frame via SyncMid, then narrow down by subsystem phase
+4. **Remove or disable old frame 21420-21470 logging** to reduce log noise
 
 ### Changes Required Before Test Run 8
 - Game.cpp: Change SyncMid extended range to 28140-28200 (per-frame)

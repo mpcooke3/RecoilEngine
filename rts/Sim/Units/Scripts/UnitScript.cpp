@@ -189,6 +189,7 @@ bool CUnitScript::TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai)
 	}
 	const bool ret = TurnToward(rot[ai.axis], ai.dest, ai.speed / tickRate);
 	{ extern int g_setRotCaller; g_setRotCaller = 1; }
+	{ extern int g_setRotUnitId; g_setRotUnitId = unit->id; }
 	lmp.SetRotation(rot);
 	return ret;
 }
@@ -202,6 +203,7 @@ bool CUnitScript::TickSpinAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai)
 	}
 	const bool ret = DoSpin(rot[ai.axis], ai.dest, ai.speed, ai.accel, tickRate);
 	{ extern int g_setRotCaller; g_setRotCaller = 2; }
+	{ extern int g_setRotUnitId; g_setRotUnitId = unit->id; }
 	lmp.SetRotation(rot);
 	return ret;
 }
@@ -518,6 +520,7 @@ void CUnitScript::TurnNow(int piece, int axis, float destination)
 	rot[axis] = destination;
 
 	{ extern int g_setRotCaller; g_setRotCaller = 3; }
+	{ extern int g_setRotUnitId; g_setRotUnitId = unit->id; }
 	p->SetRotation(rot);
 }
 

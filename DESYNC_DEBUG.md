@@ -62,66 +62,88 @@ callinArgs[1] = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(
 
 ---
 
-## Desync #2: Unknown (INVESTIGATING)
+## Desync #2: Piece Rotation Divergence (INVESTIGATING)
 
-### Status: FIRST DESYNC AT FRAME 28200
+### Status: ROOT CAUSE NARROWED — PIECE ROTATIONS DIVERGE PRE-FRAME 28140
 
-### What We Know
-- **Last matching frame**: 28140 (both platforms: chk=f50e61fd, rngCnt=26196480)
-- **First desyncing frame**: 28200 (ARM64: 00081195, x86_64/demo: 1737b544)
-- **x86_64 is fully synced** through the entire replay (597 MATCH, 0 DESYNC)
-- **ARM64 desyncs from frame 28200 onward** (697 DESYNCs after frame 28200)
+### Test Run 8 Findings (per-frame SyncMid + phase logging, frames 28140-28200)
 
-### SyncMid Breakdown at Frame 28200
-The checksum already differs at FrameStart, meaning the divergence happened between frame 28141-28199:
+**Per-frame SyncMid analysis:**
+- Frames 28140-28155: ALL checksums MATCH
+- Frame 28156: Checksums match but UnitHandler RNG counts differ (+13 x86)
+- Frame 28157: Checksums match but RNG wobble continues
+- **Frame 28158: FIRST CHECKSUM DIVERGENCE** — ARM64=40ab26ed, x86=e5b9a10b
 
-| Phase | ARM64 chk | ARM64 rngCnt | x86_64 chk | x86_64 rngCnt |
-|-------|-----------|--------------|------------|---------------|
-| FrameStart | 5329ec09 | 26458266 | ec3f8a45 | 26459176 |
-| UnitHandler | 1c39a1f3 | 26459969 | c7ca5568 | 26460936 |
-| Features+Scripts | 00081195 | 26460246 | 1737b544 | 26461200 |
+**UnitHandler phase breakdown at frame 28156 (first RNG divergence):**
 
-RNG count difference at FrameStart: x86_64 has **910 more** RNG calls, suggesting a weapon/projectile timing difference cascaded (similar pattern to Desync #1).
+| Phase | ARM64 | x86_64 | Diff |
+|-------|-------|--------|------|
+| del/move/qdel/los | 0 | 0 | 0 |
+| **slow** | **403** | **403** | **0** |
+| **upd** | **1195** | **1199** | **+4 x86** |
+| **wpn** | **75** | **84** | **+9 x86** |
+| total | 1673 | 1686 | +13 |
+
+SlowUpdate is identical. The divergence is in the **unit Update** and **Weapons** phases.
+
+**SetRot analysis:**
+- x86 has 8 more SetRot entries (17024 vs 17016) at frame 28156
+- When sorted by content (stripping pointers and callers), **piece=1 rotation values diverge**:
+  - ARM64: `(0x1.921fb6p+0, 0, 0x1.2d97c8p+2)` ≈ **(π/2, 0, 3π/2)**
+  - x86_64: `(0x1.92164ap+1, 0, 0x1.922922p+1)` ≈ **(3.14148, 0, 3.14183)**
+- These are **wildly different angles** — NOT a small rounding error
+- The SAME divergence exists at **frame 28140** (the start of our logging window!)
+- The divergent pieces are `aimPiece=1` (weapon aim pieces) on 3 different units
+
+**TickSpin/TickTurn analysis:**
+- All TickSpin `cur`, `speed`, `accel` values **MATCH** between platforms at frame 28140
+- The divergent piece=1 rotation is on the **X and Z axes** (not the spin axis Y)
+- These are STATIC rotations — set once and never changed by active animations
+- x86 has 12 more TickTurn entries (additional weapon aim turns triggered by different targeting)
+
+### Causation Chain
+1. Weapon aim pieces have different static X/Z rotations (set before frame 28140)
+2. Different piece geometry → different muzzle positions and aim vectors
+3. Different targeting decisions → some weapons aim on x86 but not ARM64 (and vice versa)
+4. Different aim commands → different RNG consumption in Update (aim callbacks) and Weapons phases
+5. Checksum diverges at frame 28158 when the accumulated RNG difference affects synced state
+
+### Key Question: WHEN Were the Divergent Rotations Set?
+
+The ARM64 values are clean TAANG conversions:
+- π/2 = 16384 × TAANG2RAD (exact)
+- 3π/2 = 49152 × TAANG2RAD (exact, or -16384 as int16_t)
+
+The x86 values are NOT clean TAANG conversions (3.14148 / TAANG2RAD ≈ 32757.4).
+This suggests the x86 values were modified by animation accumulation from a different starting point,
+or set from a different source value entirely.
 
 ### Ruled Out for Desync #2
-1. **`math::floor` platform difference** — RULED OUT. `streflop::floor` is pure bit-twiddling (portable C, no platform instructions). Cross-platform test confirms identical results for all tested inputs including edge cases. The FastMath.h `floor` uses `streflop::floor` on ARM64 vs integer truncation on x86_64, but both produce the same results.
-2. **Other `short(int)` casts in MoveTypes** — RULED OUT. Integer-to-short narrowing is well-defined wrapping on ARM64 (confirmed by test). Only `short(float)` was UB.
-   - `HoverAirMoveType.cpp:674,676`: `short(turnRate)` — turnRate is float but small values, safe in practice
-   - `GroundMoveType.cpp:1306`: `short(owner->heading - wantedHeading)` — both shorts, int promotion, safe
-   - `IPathController.cpp:57,59`: `short(maxTurnRate)` — small values, safe
-3. **`int(float)` UB** — RULED OUT for normal game values. Unlike `short` (±32767), `int` range is ±2 billion. Game coordinates, angles, etc. are well within range. No `int(float)` cast in synced code operates on values anywhere near INT_MAX.
-4. **All `short(float)` casts in synced code** — FIXED. The only instances of `short(float_expr)` in synced code were the 3 in CobInstance.cpp (now fixed) and debug logging in Weapon.cpp (also fixed).
+1. **`math::floor` platform difference** — RULED OUT. streflop::floor is portable C. Cross-platform test confirms identical.
+2. **Other `short(int)` casts** — RULED OUT. Integer narrowing is well-defined.
+3. **`int(float)` UB** — RULED OUT for game values.
+4. **All `short(float)` casts** — FIXED (3 in CobInstance.cpp + 2 in Weapon.cpp debug logging).
+5. **`math::sqrt`** — RULED OUT. ARM64 `__builtin_sqrtf` (FSQRT) and x86 `SQRTSS` are both IEEE 754 correctly rounded.
+6. **`math::atan2`** — Uses `streflop_libm::__ieee754_atan2f` on both platforms (portable C implementation).
+7. **`isqrt2_nosse`** — Same Newton-Raphson on both platforms, with `-ffp-contract=off`.
+8. **`-ffp-contract=off`** — Verified set in top-level CMakeLists.txt for all ARM64 builds.
+9. **sse2neon precision** — `SSE2NEON_PRECISE_DIV=1`, `SSE2NEON_PRECISE_MINMAX=1`, `SSE2NEON_PRECISE_DP=1` all set.
 
-### Remaining Suspects
-The root cause of desync #2 is unknown. Since it's not a type conversion issue, it may be:
-1. **A float arithmetic precision difference** — some platform-specific behavior in IEEE 754 ops we haven't found
-2. **A compiler optimization difference** — clang (ARM64) vs gcc (x86_64) generating different code for the same source
-3. **An uninitialized variable or memory layout difference** — struct padding, field ordering
-4. **A different code path taken due to #ifdef** — platform-specific branching in synced code
+### Next Steps
+1. **Add unit IDs to SetRot logging** — currently SetRot only has piece index and pointer, no unit ID
+2. **Add targeted logging at early frames** — trace when the divergent piece=1 X/Z rotations were first set to non-zero
+3. **Expand logging range** — need to go back much earlier than frame 28140 to find when the divergence began
+4. **Check model initialization** — verify S3O model loading doesn't set non-zero piece rotations
 
-### Current Debug Logging State
-All debug logging is currently targeted at the old desync range (frames 21420-21470). For desync #2 we need to retarget to frames 28140-28200. Logging locations:
+### Debug Logging State (Test Run 8)
 
-| File | Tags | Current Frame Range |
-|------|------|-------------------|
-| UnitScript.cpp | [TurnNow], [TurnCmd], [TickTurn], [TickSpin], [SpinCmd], [TurnTwd] | 21420-21470 |
-| Weapon.cpp | [AimWpn], [AimCB], [PieceEvo], [WantedDir], [TargetPos], [TryTarget] | 21420+ (no upper) |
-| UnitHandler.cpp | [SlowUpd], [UnitHandler] | 21420+/21440+ |
-| 3DModel.cpp | [SetRot] | 21430-21470 |
-| Game.cpp | [SyncMid] | every 60 frames + 21440-21490 |
-
-### Investigation Plan
-1. **Retarget SyncMid** to per-frame granularity between frames 28140-28200 (Game.cpp)
-2. **Retarget UnitHandler [SlowUpd] logging** to frames 28140-28200 to identify which unit's RNG diverges first
-3. **Retarget unit-specific logging** — we don't know which unit diverges yet; first find the exact frame via SyncMid, then narrow down by subsystem phase
-4. **Remove or disable old frame 21420-21470 logging** to reduce log noise
-
-### Changes Required Before Test Run 8
-- Game.cpp: Change SyncMid extended range to 28140-28200 (per-frame)
-- UnitHandler.cpp: Change [SlowUpd] range to 28140-28200
-- UnitScript.cpp: Change frame ranges to 28140-28200 (but unit ID unknown — may need to log all units initially or remove unit filter)
-- Weapon.cpp: Change frame range start to 28140
-- 3DModel.cpp: Change frame range to 28140-28200
+| File | Tags | Frame Range |
+|------|------|-------------|
+| UnitScript.cpp | [TurnNow], [TurnCmd], [TickTurn], [TickSpin], [SpinCmd], [TurnTwd] | 28140-28200 |
+| Weapon.cpp | [AimWpn], [AimCB], [PieceEvo], [WantedDir], [TargetPos], [TryTarget] | 28140-28200 |
+| UnitHandler.cpp | [SlowUpd], [UnitHandler] | 28140-28200 |
+| 3DModel.cpp | [SetRot] | 28140-28200 |
+| Game.cpp | [SyncMid] | every 60 frames + 28140-28200 per-frame |
 
 ## Architecture Notes
 - **COB VM**: Pure integer stack machine. No float math. TAANG<->radian conversion at C++ boundary only.
@@ -132,5 +154,6 @@ All debug logging is currently targeted at the old desync range (frames 21420-21
 - **RAD2TAANG** = 65536 / (2*pi), **TAANG2RAD** = 2*pi / 65536
 
 ### Log Files
+- Test Run 8 (phase logging): ARM64 `/tmp/arm64_run8.log`, x86_64 `/tmp/x86_run8.log`
 - Test Run 7 (with short() fix): ARM64 `/tmp/arm64_run7.log`, x86_64 `/tmp/x86_run7.log`
 - Test Run 6 (pre-fix): ARM64 `/tmp/arm64_run6.log`, x86_64 `/tmp/x86_run6.log`

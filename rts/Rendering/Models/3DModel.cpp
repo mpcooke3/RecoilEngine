@@ -22,6 +22,7 @@
 // Debug: tracks which function calls SetRotation
 // 0=unknown, 1=TickTurnAnim, 2=TickSpinAnim, 3=TurnNow
 int g_setRotCaller = 0;
+int g_setRotUnitId = -1;
 
 CR_BIND(LocalModelPiece, (nullptr))
 CR_REG_METADATA(LocalModelPiece, (
@@ -485,14 +486,27 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 	if (blockScriptAnims)
 		return;
 
-	// Log ALL rotation changes for piece 16 (aim piece) near desync frame
 	extern int g_setRotCaller;
-	if (&dst == &rot && gs != nullptr && gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		LOG("[SetRot] f=%d piece=%d ptr=%p caller=%d old=(%a,%a,%a) new=(%a,%a,%a)",
-			gs->frameNum, scriptPieceIndex, (void*)this, g_setRotCaller,
-			dst.x, dst.y, dst.z, src.x, src.y, src.z);
+	extern int g_setRotUnitId;
+	if (&dst == &rot && gs != nullptr) {
+		// One-shot detector: log when piece rotation X or Z first becomes non-zero
+		if (scriptPieceIndex == 1 && (
+			(dst.x == 0.0f && src.x != 0.0f) ||
+			(dst.z == 0.0f && src.z != 0.0f))) {
+			LOG("[PieceRotInit] f=%d unit=%d piece=%d ptr=%p caller=%d "
+				"old=(%a,%a,%a) new=(%a,%a,%a)",
+				gs->frameNum, g_setRotUnitId, scriptPieceIndex, (void*)this, g_setRotCaller,
+				dst.x, dst.y, dst.z, src.x, src.y, src.z);
+		}
+		// Verbose logging near desync frame
+		if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
+			LOG("[SetRot] f=%d unit=%d piece=%d ptr=%p caller=%d old=(%a,%a,%a) new=(%a,%a,%a)",
+				gs->frameNum, g_setRotUnitId, scriptPieceIndex, (void*)this, g_setRotCaller,
+				dst.x, dst.y, dst.z, src.x, src.y, src.z);
+		}
 	}
 	g_setRotCaller = 0;
+	g_setRotUnitId = -1;
 
 	if (!dirty && !dst.same(src)) {
 		SetDirty();

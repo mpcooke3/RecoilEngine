@@ -91,10 +91,31 @@ RNG count difference at FrameStart: x86_64 has **910 more** RNG calls, suggestin
    - `IPathController.cpp:57,59`: `short(maxTurnRate)` — likely safe
 3. **Another instance of the same `short()` UB pattern** in a code path we haven't found yet
 
-### Next Steps
-1. Add SyncMid logging at per-frame granularity between frames 28140-28200 to pinpoint exact divergence frame
-2. Investigate `math::floor` in `ClampRad` — compare ARM64 `streflop::floor` vs x86_64 integer truncation
-3. Search for additional `short(float)` UB patterns across the codebase
+### Current Debug Logging State
+All debug logging is currently targeted at the old desync range (frames 21420-21470). For desync #2 we need to retarget to frames 28140-28200. Logging locations:
+
+| File | Tags | Current Frame Range |
+|------|------|-------------------|
+| UnitScript.cpp | [TurnNow], [TurnCmd], [TickTurn], [TickSpin], [SpinCmd], [TurnTwd] | 21420-21470 |
+| Weapon.cpp | [AimWpn], [AimCB], [PieceEvo], [WantedDir], [TargetPos], [TryTarget] | 21420+ (no upper) |
+| UnitHandler.cpp | [SlowUpd], [UnitHandler] | 21420+/21440+ |
+| 3DModel.cpp | [SetRot] | 21430-21470 |
+| Game.cpp | [SyncMid] | every 60 frames + 21440-21490 |
+
+### Investigation Plan
+1. **Retarget SyncMid** to per-frame granularity between frames 28140-28200 (Game.cpp)
+2. **Retarget unit-specific logging** — we don't know which unit diverges yet; first find the exact frame via SyncMid, then narrow down by subsystem phase
+3. **Widen UnitHandler [SlowUpd] logging** to cover frames 28140-28200 to identify which unit's RNG diverges first
+4. **Investigate `math::floor` in `ClampRad`** — compare ARM64 `streflop::floor` vs x86_64 integer truncation (FastMath.h). This is the top suspect since it affects every angle computation.
+5. **Search for additional `short(float)` UB** patterns across the full codebase (not just `rts/Sim`)
+6. **Remove or disable old frame 21420-21470 logging** to reduce log noise
+
+### Changes Required Before Test Run 8
+- Game.cpp: Change SyncMid extended range to 28140-28200 (per-frame)
+- UnitHandler.cpp: Change [SlowUpd] range to 28140-28200
+- UnitScript.cpp: Change frame ranges to 28140-28200 (but unit ID unknown — may need to log all units initially or remove unit filter)
+- Weapon.cpp: Change frame range start to 28140
+- 3DModel.cpp: Change frame range to 28140-28200
 
 ## Architecture Notes
 - **COB VM**: Pure integer stack machine. No float math. TAANG<->radian conversion at C++ boundary only.

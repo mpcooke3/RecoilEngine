@@ -481,7 +481,7 @@ void CUnitHandler::Update()
 	const uint64_t rng7 = gsRNG.GetCallCount();
 
 	// Log sub-phase RNG consumption near desync zone
-	if (gs->frameNum >= 21440) {
+	if (gs->frameNum >= 21420) {
 		LOG("[UnitHandler] f=%d del=%llu move=%llu qdel=%llu los=%llu slow=%llu upd=%llu wpn=%llu total=%llu",
 			gs->frameNum,
 			(unsigned long long)(rng1-rng0), (unsigned long long)(rng2-rng1),

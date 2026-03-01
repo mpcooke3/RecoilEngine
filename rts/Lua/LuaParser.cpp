@@ -15,6 +15,7 @@
 #include "LuaConstGame.h"
 #include "LuaConstEngine.h"
 #include "LuaIO.h"
+#include "LuaMathExtra.h"
 #include "LuaVFS.h"
 #include "LuaUtils.h"
 
@@ -148,6 +149,7 @@ void LuaParser::SetupEnv(bool isSyncedCtxt, bool isDefsParser)
 			LuaPushNamedCFunc(L, "random", DummyRandom);
 			LuaPushNamedCFunc(L, "randomseed", DummyRandomSeed);
 		}
+		LuaMathExtra::PushEntries(L);
 		lua_pop(L, 1); // pop "math"
 	}
 

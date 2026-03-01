@@ -303,7 +303,7 @@ void CWeapon::UpdateWeaponVectors()
 
 	// Comprehensive piece transform evolution logging for unit 11816
 	// NOTE: SyncedFloat3 members (frontdir/rightdir/updir) MUST be cast to (float) for variadic LOG
-	if (owner->id == 11816 && weaponNum == 0 && (gs->frameNum % 100 == 0 || gs->frameNum >= 21440)) {
+	if (owner->id == 11816 && weaponNum == 0 && (gs->frameNum % 100 == 0 || gs->frameNum >= 21420)) {
 		LOG("[PieceEvo] f=%d muzzlePos=(%a,%a,%a) aimFrom=(%a,%a,%a) relMuzzle=(%a,%a,%a) relAim=(%a,%a,%a) ownerPos=(%a,%a,%a) front=(%a,%a,%a) right=(%a,%a,%a) up=(%a,%a,%a) wDir=(%a,%a,%a) aimPc=%d mzlPc=%d",
 			gs->frameNum,
 			weaponMuzzlePos.x, weaponMuzzlePos.y, weaponMuzzlePos.z,
@@ -346,12 +346,46 @@ void CWeapon::UpdateWeaponVectors()
 				unsigned int val; memcpy(&val, &aimMat.m[i], sizeof(val));
 				aimMatHash ^= val + 0x9e3779b9 + (aimMatHash << 6) + (aimMatHash >> 2);
 			}
-			LOG("[PieceAnim] f=%d aimPiece=%d ptr=%p rot=(%a,%a,%a) pos=(%a,%a,%a) matHash=%08x mat00=%a mat12=%a mat13=%a mat14=%a",
+			// Log all 16 matrix elements for aimPiece to find exact divergence
+			LOG("[PieceAnim] f=%d aimPiece=%d ptr=%p rot=(%a,%a,%a) pos=(%a,%a,%a) matHash=%08x",
 				gs->frameNum, aimFromPiece, (void*)aimP,
 				aimRot.x, aimRot.y, aimRot.z,
 				aimPos2.x, aimPos2.y, aimPos2.z,
-				aimMatHash,
-				aimMat.m[0], aimMat.m[12], aimMat.m[13], aimMat.m[14]);
+				aimMatHash);
+			LOG("[AimMat] f=%d m0=%a m1=%a m2=%a m3=%a m4=%a m5=%a m6=%a m7=%a m8=%a m9=%a m10=%a m11=%a m12=%a m13=%a m14=%a m15=%a",
+				gs->frameNum,
+				aimMat.m[0], aimMat.m[1], aimMat.m[2], aimMat.m[3],
+				aimMat.m[4], aimMat.m[5], aimMat.m[6], aimMat.m[7],
+				aimMat.m[8], aimMat.m[9], aimMat.m[10], aimMat.m[11],
+				aimMat.m[12], aimMat.m[13], aimMat.m[14], aimMat.m[15]);
+
+			// Log piece 16's pieceSpaceMat (local transform, before parent composition)
+			const CMatrix44f& psMat = aimP->GetPieceSpaceMatrix();
+			LOG("[AimPSMat] f=%d m0=%a m1=%a m2=%a m3=%a m4=%a m5=%a m6=%a m7=%a m8=%a m9=%a m10=%a m11=%a m12=%a m13=%a m14=%a m15=%a",
+				gs->frameNum,
+				psMat.m[0], psMat.m[1], psMat.m[2], psMat.m[3],
+				psMat.m[4], psMat.m[5], psMat.m[6], psMat.m[7],
+				psMat.m[8], psMat.m[9], psMat.m[10], psMat.m[11],
+				psMat.m[12], psMat.m[13], psMat.m[14], psMat.m[15]);
+
+			// Log parent piece matrix to isolate whether divergence is local or inherited
+			const LocalModelPiece* parentP = aimP->parent;
+			if (parentP != nullptr) {
+				const CMatrix44f& parentMat = parentP->GetModelSpaceMatrix();
+				unsigned int parentMatHash = 0;
+				for (int i = 0; i < 16; ++i) {
+					unsigned int val; memcpy(&val, &parentMat.m[i], sizeof(val));
+					parentMatHash ^= val + 0x9e3779b9 + (parentMatHash << 6) + (parentMatHash >> 2);
+				}
+				LOG("[ParentMat] f=%d parentPiece=%d rot=(%a,%a,%a) matHash=%08x m0=%a m1=%a m2=%a m3=%a m4=%a m5=%a m6=%a m7=%a m8=%a m9=%a m10=%a m11=%a m12=%a m13=%a m14=%a m15=%a",
+					gs->frameNum, parentP->GetScriptPieceIndex(),
+					parentP->GetRotation().x, parentP->GetRotation().y, parentP->GetRotation().z,
+					parentMatHash,
+					parentMat.m[0], parentMat.m[1], parentMat.m[2], parentMat.m[3],
+					parentMat.m[4], parentMat.m[5], parentMat.m[6], parentMat.m[7],
+					parentMat.m[8], parentMat.m[9], parentMat.m[10], parentMat.m[11],
+					parentMat.m[12], parentMat.m[13], parentMat.m[14], parentMat.m[15]);
+			}
 		}
 	}
 }
@@ -1076,7 +1110,7 @@ bool CWeapon::TryTarget(const float3 tgtPos, const SWeaponTarget& trg, bool preF
 	RECOIL_DETAILED_TRACY_ZONE;
 	assert(GetLeadTargetPos(trg).SqDistance(tgtPos) < Square(250.0f));
 
-	const bool dbgTT = (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21440 && preFire);
+	const bool dbgTT = (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420 && preFire);
 
 	if (!TestTarget(tgtPos, trg)) {
 		if (dbgTT) LOG("[TryTarget] f=%d unit=%d FAIL=TestTarget", gs->frameNum, owner->id);

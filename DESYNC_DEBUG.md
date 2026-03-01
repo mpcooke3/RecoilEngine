@@ -30,7 +30,8 @@ cd build-headless && make engine-headless -j$(nproc)
 3. **ARM64 self-consistency PROVEN** - 21/21 checksums match between two independent ARM64 runs
 4. **SmoothHeightMesh computes identically** - hash a51b7d50 on ARM64
 5. **Matrix multiply via sse2neon is CORRECT** - 10,000 self-checks, zero mismatches between SSE (via sse2neon) and scalar
-6. **Unit 11816 weapon 0 is the first affected unit** - weapon fires on ARM64 at frame 21455, timing differs on x86_64
+6. **Unit 11816 weapon 0 is the first affected unit** 
+6. - weapon fires on ARM64 at frame 21455, timing differs on x86_64
 
 ### Root Cause Chain (high level)
 ```
@@ -106,6 +107,13 @@ All logging targets unit 11816, weapon 0, frames >= 21440:
 | `[AimCB]` | Weapon.cpp | AimScriptFinished callback result (angleGood transition) |
 | `[TargetPos]` | Weapon.cpp | currentTargetPos after GetLeadTargetPos |
 | `[WpnFire]` | Weapon.cpp | weapon fire decision details |
+| `[SetRot]` | 3DModel.cpp | All SetRotation calls for piece 16 with caller ID, old/new rot, ptr |
+| `[TurnNow]` | UnitScript.cpp | TurnNow calls for unit 11816 with rawDest and clampDest |
+| `[TickTurn]` | UnitScript.cpp | TickTurnAnim for piece 16 or unit 11816 |
+| `[TickSpin]` | UnitScript.cpp | TickSpinAnim for piece 16 or unit 11816 |
+| `[AimMat]` | Weapon.cpp | All 16 model-space matrix elements for aimPiece (piece 16) |
+| `[AimPSMat]` | Weapon.cpp | All 16 pieceSpaceMat elements for aimPiece (local transform) |
+| `[ParentMat]` | Weapon.cpp | Parent piece index, rotation, and all 16 model-space matrix elements |
 | `[MatMul]` | Matrix44f.cpp | ARM64 matrix multiply self-check (can be removed) |
 | `[SmoothMesh]` | SmoothHeightMesh.cpp | Mesh sample hash (can be removed) |
 
@@ -165,36 +173,29 @@ So in piece animation code (`TurnToward`, `ClampRad`):
 - `TurnToward()` computes `delta = fmod(dest - cur + 3π, 2π) - π` to find shortest rotation path
 - `Turn()` command from COB script stores `ClampRad(destination)` as animation dest
 
-### Critical Discovery: Piece 16 Has No Turn/Spin Animations!
-The aim piece (piece 16) has NO active Turn or Spin animations at frames 21440-21470:
-- 0 `[TickTurn]` entries for piece 16
-- 0 `[TickSpin]` entries for piece 16
-- 0 `[TurnNow]` entries for piece 16
-- 0 `[TurnCmd]` entries for piece 16
+### Critical Discovery: Piece 16 Rotation Set by COB TurnNow (RESOLVED)
+**Previous mystery**: Test Runs 1-4 showed no TickTurn/TickSpin/TurnNow entries for piece 16,
+yet PieceAnim showed local rotation changing. This was caused by stale binaries and logging bugs.
 
-Yet the PieceAnim LOCAL rotation changes:
+**Test Run 5 resolution**: ALL rotation changes come from `TurnNow` (caller=3). The COB
+AimWeapon script calls `turn-now piece_16 y-axis heading` every frame to point the turret.
+This is the TURN_NOW opcode, NOT a Turn animation (no TickTurnAnim involved).
+
+The local rotation timeline on ARM64:
 ```
-f=21440-21444: rot Y = 0x1.77bbb8p+2 (CONSTANT - local rot doesn't change)
-f=21445:       rot Y = 0x1.617f26p+2 (JUMPS! Decreased by ~0.411)
-f=21446:       rot Y = 0x1.3ffe9ap+2 (continuing to decrease)
-f=21447:       rot Y = 0x1.1e7e0ep+2 (continuing to decrease)
+f=21420-21429: rot Y = 0x0p+0           (weapon idle, heading=0)
+f=21430:       rot Y = 0x1.77bbb8p+2    (weapon starts aiming, heading ~5.93)
+f=21431-21443: rot Y = 0x1.77bbb8p+2    (CONSTANT - steady tracking)
+f=21444:       rot Y → 0x1.6caap+2 → 0x1.617f26p+2  (heading changes, Y DECREASING)
+f=21445:       rot Y → 0x1.56544cp+2 → 0x1.4b2974p+2 → 0x1.3ffe9ap+2  (rapid decrease)
+f=21449:       rot Y oscillation begins between 0x1.8a4e84p+1 and 0x1.a071f4p+1
 ```
 
-But the model-space MATRIX (matHash) changes EVERY frame even when local rot is constant,
-because PARENT pieces have active turn animations that affect the cumulative matrix.
-
-**Implication**: The local rotation jump at frame 21445 is NOT from the animation system.
-Something ELSE sets piece 16's rotation. Need to investigate:
-1. `SetPieceSpaceMatrix()` - external matrix override
-2. COB `set-piece-rotation` or similar opcode
-3. Some weapon system code that directly sets piece rotation
-4. Check if piece 16 is actually being used as a "blockScriptAnims" piece where the matrix is set externally
-
-### Previous Plan (completed)
+### Previous Plan (COMPLETED)
 1. ~~Rebuild ARM64 binary~~ (done)
 2. ~~Commit + push all changes to both machines~~ (done)
 3. ~~Add logging to `SetPieceSpaceMatrix()` and `SetRotation()` on `LocalModelPiece` for piece 16~~ (done)
-4. Identify what code path changes piece 16's rotation at frame 21445
+4. ~~Identify what code path changes piece 16's rotation at frame 21445~~ → **TurnNow (COB TURN_NOW opcode from AimWeapon script)**
 
 ## Test Run 3: SetRotation/SetPieceSpaceMatrix Instrumentation (2026-02-28)
 
@@ -269,24 +270,254 @@ Only 1 caller of `LocalModelPiece::SetPieceSpaceMatrix()`:
 the 3 known callers (TickTurnAnim, TickSpinAnim, TurnNow) fire for this piece. There are ONLY 3
 callers of `LocalModelPiece::SetRotation()` in the entire codebase (verified via exhaustive grep).
 
-### Test Run 5: Caller Tracing (in progress)
-Added global `g_setRotCaller` variable:
+### Test Run 5: Caller Tracing — BREAKTHROUGH (2026-03-01)
+
+#### Changes (commits 94b2bf5c3f, 775bd82c78)
+Added global `g_setRotCaller` variable in 3DModel.cpp:
 - Set to 1 before `SetRotation` in `TickTurnAnim`
 - Set to 2 before `SetRotation` in `TickSpinAnim`
 - Set to 3 before `SetRotation` in `TurnNow`
 - Logged in `SetPosOrRot` as `caller=%d`
-- Reset to 0 after logging
+- Reset to 0 unconditionally in `SetPosOrRot` (after logging block, for ALL pieces)
 
-If `caller=0` appears, something ELSE is calling SetRotation. If caller=1 but no [TickTurn] log,
-there's a bug in the TickTurn logging condition (e.g., ai.piece != 16 for this unit's animations).
-Also widened [TickSpin] to log all units' piece 16 (same as [TickTurn]).
+Also added `[TurnNow]` logging in `CUnitScript::TurnNow()` with rawDest and clampDest values.
 
-### Remaining hypotheses
-1. **ai.piece != scriptPieceIndex for unit 11816** - The animation system might store a different
-   piece index than 16, but it maps to the same LocalModelPiece via `pieces[]`. This would cause
-   `ai.piece == 16` filter to miss it while SetRotation still fires for scriptPieceIndex==16.
-2. **Different COB Turn destinations** - Root cause for WHY rotations differ cross-platform.
-3. **Unknown 4th caller** - Would show as caller=0 in the trace.
+#### Results — ALL calls are TurnNow (caller=3)
+
+**100% of SetRot entries for unit 11816 piece 16 show `caller=3` (TurnNow).** No unknown callers.
+No TickTurnAnim (caller=1) or TickSpinAnim (caller=2). The COB TURN_NOW opcode is the exclusive
+source of all rotation changes on this piece.
+
+The earlier "missing TurnNow" mystery (Test Runs 3-4) was caused by stale binaries and logging
+conditions that didn't match. The Test Run 5 build with corrected logging shows TurnNow firing
+abundantly.
+
+#### TurnNow Destination Timeline (ARM64, unit 11816 piece 16 axis 1)
+
+```
+Phase 1: Weapon idle (f=21420-21429)
+  rawDest=0x0p+0 (zero), 1 TurnNow call/frame for piece 16
+  → weapon not aiming, COB AimWeapon returns heading=0
+
+Phase 2: Weapon starts aiming (f=21430)
+  rawDest=-0x1.655b2ep-2 → clampDest=0x1.7bca04p+2
+  → first non-zero heading, weapon acquired target
+
+Phase 3: Steady tracking (f=21431-21443)
+  rawDest=0x1.77bbb8p+2 (constant), 2 TurnNow calls/frame
+  → weapon maintains stable heading, COB script calls turn-now twice per frame
+
+Phase 4: RE-AIM / DIVERGENCE ONSET (f=21444) ← CRITICAL FRAME
+  Call 1: rawDest=0x1.77bbb8p+2 → clampDest=0x1.77bbb8p+2  (old heading, no-op)
+  Call 2: rawDest=-0x1.2badb2p-1 → clampDest=0x1.6caap+2   (NEW heading! Y decreases by ~0.17)
+  Call 3: rawDest=-0x1.85047ep-1 → clampDest=0x1.617f26p+2  (heading continues decreasing)
+  → 3 calls this frame, heading starts changing rapidly
+
+Phase 5: Rapid heading decrease (f=21445-21448)
+  f=21445: 3 calls, Y decreasing: 0x1.56544cp+2 → 0x1.4b2974p+2 → 0x1.3ffe9ap+2
+  f=21446: 3 calls, Y decreasing: 0x1.34d3cp+2 → 0x1.29a8e8p+2 → 0x1.1e7e0ep+2
+  f=21447: 3 calls, Y decreasing: 0x1.135334p+2 → 0x1.08285cp+2 → 0x1.f9fb02p+1
+  f=21448: 3 calls, Y decreasing: 0x1.e3a55p+1 → 0x1.cd4f9cp+1 → 0x1.b6f9eap+1
+
+Phase 6: Reversal + oscillation (f=21449+)
+  f=21449: Call 1: clampDest=0x1.a0a438p+1 (still decreasing)
+           Call 2: clampDest=0x1.8a4e84p+1 (still decreasing)
+           Call 3: clampDest=0x1.a071f4p+1 (REVERSAL! Y goes back UP)
+  f=21450+: OSCILLATION between 0x1.8a4e84p+1 and 0x1.a071f4p+1 every call
+  → weapon "jitters" between two aim positions, COB calls turn-now 3x/frame
+```
+
+#### Interpretation
+
+The TurnNow `rawDest` values ARE the heading angle passed to the COB AimWeapon script by the
+weapon system. The COB script receives `(heading, pitch)` as parameters, computes `turn-now`
+for piece 16 (turret Y) and piece 17 (barrel pitch), and calls the TURN_NOW opcode.
+
+The heading is computed from:
+```
+wantedDir = SafeNormalize(currentTargetPos - aimFromPos)
+heading = GetHeadingFromVector(wantedDir.x, wantedDir.z)  // in TAANG units
+```
+Then converted to radians and passed to AimWeapon. The `rawDest` in the log is this radian value.
+
+**Root cause**: `aimFromPos` depends on piece transforms (model-space matrices), which are computed
+via non-synced float math (ComposeTransform + matrix chain). If the model-space matrix differs
+between ARM64 and x86_64 — even by 1 ULP in a parent piece — the `aimFromPos` will differ,
+producing a different `wantedDir`, which produces a different heading, which gets passed to
+TurnNow, which sets piece 16's rotation differently, which FURTHER changes the model-space matrix
+in a feedback loop.
+
+The key question is: **what causes the FIRST divergence in the model-space matrix?** All known
+operations are deterministic:
+- streflop sin/cos: proven deterministic (FPDeterminism test)
+- Matrix multiply: proven deterministic (self-check test, sse2neon vs scalar)
+- isqrt: proven deterministic (cross-arch test)
+
+Need x86_64 TurnNow data at frame 21444 to confirm whether the rawDest values differ.
+
+#### Cross-platform comparison (PieceAnim, previously confirmed)
+```
+Frame 21444: MATCH on both platforms
+  rot=(0x0p+0, 0x1.77bbb8p+2, 0x0p+0)   [Y ≈ 5.934]
+
+Frame 21445: DIVERGE!
+  ARM64:  rot=(0x0p+0, 0x1.617f26p+2, 0x0p+0)   [Y ≈ 5.523, DECREASED]
+  x86_64: rot=(0x0p+0, 0x1.809b16p+2, 0x0p+0)   [Y ≈ 6.019, INCREASED]
+```
+
+On ARM64, TurnNow starts changing heading at frame 21444 (call 2: clampDest=0x1.6caap+2).
+On x86_64, the heading apparently stays constant at 0x1.77bbb8p+2 through frame 21444 and
+changes at frame 21445 to 0x1.809b16p+2 (OPPOSITE direction — increase vs decrease).
+
+This is NOT a 1-ULP rounding error. The headings go in OPPOSITE DIRECTIONS. This means the
+weapon system computes fundamentally different aim directions on the two platforms.
+
+#### Next steps
+1. **Get x86_64 TurnNow data** — rebuild and run x86_64 to get `[TurnNow]` rawDest values
+   at frames 21430-21450 for direct comparison
+2. **Compare rawDest at frame 21430** — the FIRST non-zero heading. If this already differs,
+   the root cause is in the initial aimFromPos computation
+3. **Log aimFromPos/muzzlePos at the transition** — add `%a` logging of aimFromPos and
+   muzzlePos vectors at frames 21430-21445 to find exactly which float value diverges first
+4. **Log ComposeTransform inputs/outputs** for piece 16 and its parent chain at the
+   transition frame to find the exact operation that produces a different result
+
+### Test Run 6: Single-Shot Root Cause Identification (PLANNED)
+
+#### Goal
+Identify the EXACT float operation or value that first diverges between ARM64 and x86_64,
+causing the AimWeapon heading to differ at frame 21444. This run should produce enough data
+to pinpoint the root cause without needing further iterations.
+
+#### What's missing from current logging
+1. **Frame range gap**: PieceEvo/WantedDir/PieceAnim only log at frames >= 21440 (or every
+   100 frames). The weapon starts aiming at frame 21430 — we're missing 10 critical frames
+   where the initial aimFromPos is computed.
+2. **Incomplete matrix**: PieceAnim logs only 4 of 16 matrix elements (mat[0], mat[12-14]).
+   If the divergence is in another element, we'd see matHash differ but not know which one.
+3. **No parent piece data**: Piece 16's model-space matrix = pieceSpaceMat * parent->modelSpaceMat.
+   If a parent piece's matrix diverges, we need to see it.
+
+#### What's already sufficient
+- `[TurnNow]` rawDest/clampDest with `%a` format (frames 21420-21470)
+- `[AimWpn]` with TAANG integers (`taangH=%hd taangP=%hd`) — already present
+- `[WantedDir]` with aimFromPos, diff, wantedDir in `%a` format
+- `[PieceEvo]` with muzzlePos, aimFromPos, relMuzzle, relAim in `%a` format
+- `[SetRot]` with caller trace, old/new values, ptr
+
+#### Changes for Test Run 6
+1. **Extend frame range to 21420** — change `gs->frameNum >= 21440` to `>= 21420` for
+   PieceEvo, WantedDir, PieceAnim, TargetPos logging blocks in Weapon.cpp
+2. **Log all 16 matrix elements** for aimPiece (piece 16) in PieceAnim using `%a` format
+3. **Log parent piece matrix** — add `[ParentMat]` logging for piece 16's parent:
+   parent scriptPieceIndex, parent rot, and all 16 parent model-space matrix elements
+4. **Log piece 16 pieceSpaceMat** — separate from modelSpaceMat, to isolate whether the
+   divergence is in the local transform or inherited from the parent chain
+
+#### Expected analysis workflow
+After collecting ARM64 and x86_64 data:
+```
+1. Compare [TurnNow] rawDest at frame 21430 — does the FIRST heading match?
+   → YES: divergence accumulates over frames 21431-21443
+   → NO: aimFromPos already differs at frame 21430 (proceed to step 3)
+
+2. If YES at step 1: compare rawDest frame-by-frame 21431-21443
+   → Find the first frame where rawDest differs (or where TAANG quantization hides a diff)
+   → Go to that frame's [WantedDir] to see aimFromPos
+
+3. Compare [WantedDir] aimFromPos at the divergence frame
+   → Which component (x, y, z) differs first?
+   → Does targetPos match? (synced — should always match)
+
+4. Compare [PieceAnim] full 16-element matrix at the divergence frame
+   → Which matrix element diverges first?
+
+5. Compare [ParentMat] — is the divergence in piece 16's local transform or parent?
+   → If parent matrix matches but piece 16 matrix differs: issue in piece 16's pieceSpaceMat
+     (RotateEulerYXZ or local position)
+   → If parent matrix differs: recursively check parent's parent (may need another run)
+
+6. If pieceSpaceMat differs with same rotation inputs:
+   → Issue is in RotateEulerYXZ implementation (sin/cos or matrix ops)
+   → But we proved sin/cos deterministic... so check for intermediate precision issues
+```
+
+#### Run procedure
+```bash
+# 1. Commit changes on ARM64, push
+git add -A && git commit -m "Test Run 6: enhanced logging for root cause"
+git push origin arm64-desync-test
+
+# 2. On x86_64: pull and build
+ssh -p 2222 matt@192.168.1.174
+cd /home/matt/RecoilEngine && git pull && cd build-headless && make engine-headless -j$(nproc)
+
+# 3. On ARM64: build
+cd build-desync-test && make engine-headless -j10
+
+# 4. Run on BOTH machines simultaneously
+# ARM64:
+./spring-headless --write-dir /tmp/desync-test --isolation-dir /tmp/desync-test \
+  "/tmp/desync-test/demos/2025-08-24_11-11-45-534_Full Metal Plate 1_2025.04.08.sdfz"
+# x86_64:
+./spring-headless --write-dir /tmp/desync-test --isolation-dir /tmp/desync-test \
+  "/tmp/desync-test/demos/2025-08-24_11-11-45-534_Full Metal Plate 1_2025.04.08.sdfz"
+
+# 5. Copy x86_64 log locally for comparison
+scp -P 2222 matt@192.168.1.174:/tmp/desync-test/infolog.txt /tmp/desync-test/infolog-x86.txt
+
+# 6. Compare critical logs
+diff <(grep '\[TurnNow\].*piece=16' /tmp/desync-test/infolog.txt) \
+     <(grep '\[TurnNow\].*piece=16' /tmp/desync-test/infolog-x86.txt)
+diff <(grep '\[WantedDir\]' /tmp/desync-test/infolog.txt) \
+     <(grep '\[WantedDir\]' /tmp/desync-test/infolog-x86.txt)
+diff <(grep '\[PieceAnim\].*aimPiece' /tmp/desync-test/infolog.txt) \
+     <(grep '\[PieceAnim\].*aimPiece' /tmp/desync-test/infolog-x86.txt)
+diff <(grep '\[ParentMat\]' /tmp/desync-test/infolog.txt) \
+     <(grep '\[ParentMat\]' /tmp/desync-test/infolog-x86.txt)
+```
+
+## CRITICAL: `math::floor` Platform Difference
+
+**`math::floor` uses DIFFERENT implementations on ARM64 vs x86_64!**
+
+File: `rts/System/FastMath.h` (line 213)
+```cpp
+template<typename T>
+inline T floor(T f)
+{
+#if defined(__aarch64__) || defined(__arm64__)
+    // ARM64: uses portable streflop::floor
+    return streflop::floor(f);
+#else
+    // x86_64: uses integer truncation + correction
+    T truncX = static_cast<T>(static_cast<int>(f));
+    return truncX - static_cast<T>(truncX > f);
+#endif
+}
+```
+
+This is exposed via `namespace math { using fastmath::floor; }` which OVERRIDES `streflop::floor`.
+
+### Where `math::floor` is used in the desync path
+- **`ClampRad()`** (SpringMath.inl:154): `f = f - math::TWOPI * math::floor(f / math::TWOPI);`
+- ClampRad is called by `TurnNow()` to normalize piece rotation to [0, 2π)
+- ClampRad is also called by `TickTurnAnim()`, `Turn()`, and others
+
+### Risk assessment
+For normal-range values (|f| < 2^31), both implementations produce identical results:
+- Both correctly compute floor for positive values (truncation is correct)
+- Both correctly compute floor for negative values (x86_64 applies `-(truncX > f)` correction)
+- The `-0.0f` edge case is handled by ClampRad's `f += 0.0f` preconditioning
+
+The implementations ONLY differ for:
+1. Values outside int range (|f| > 2^31) — not applicable (TAANG angles are small)
+2. `-0.0f` input — handled by ClampRad
+3. Values where `static_cast<int>(f)` overflow behavior differs — not applicable
+
+**Verdict**: Likely NOT the root cause, but must be verified by comparing ClampRad outputs
+([TurnNow] clampDest) cross-platform. If rawDest matches but clampDest differs, `floor` IS
+the culprit.
 
 ## Key Architecture Notes
 - **SyncedPrimitive<T>**: Every write to SyncedFloat/SyncedInt calls `Sync::Assert()` -> `CSyncChecker::Sync()` -> feeds value into XXH3 running hash
@@ -294,8 +525,11 @@ Also widened [TickSpin] to log all units' piece 16 (same as [TickTurn]).
 - Only code between `ENTER_SYNCED_CODE()` and `LEAVE_SYNCED_CODE()` contributes to checksum
 - `math::sqrt` -> `fastmath::sqrt_sse` -> `__builtin_sqrtf` on ARM64 (IEEE 754 FSQRT)
 - `math::atan2/sin/cos/etc` -> `streflop::` -> portable libm
+- **`math::floor`** -> `fastmath::floor` -> **PLATFORM-SPECIFIC** (see above)
 - `SyncedFloat3` operator* returns `float3` (implicit conversion from SyncedFloat to float happens)
 - **SyncedFloat3 variadic LOG bug**: Must use `(float)` cast when logging SyncedPrimitive values in variadic functions like LOG()
+- **`GetHeadingFromVectorF`** uses polynomial atan approximation (NOT `math::atan2`), all IEEE 754 ops
+- **COB VM** operates on pure integers — no float math. TAANG→radian conversion happens only at the C++ boundary (`int * TAANG2RAD`)
 
 ## Log Analysis Commands
 ```bash

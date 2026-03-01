@@ -533,8 +533,8 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 
 	// Log AimWeapon inputs for unit 11816
 	if (owner->id == 11816 && weaponNum == 0 && gs->frameNum >= 21420) {
-		const short taangH = short(aimHeading * RAD2TAANG);
-		const short taangP = short(pitch * RAD2TAANG);
+		const int16_t taangH = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(aimHeading * RAD2TAANG)));
+		const int16_t taangP = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(pitch * RAD2TAANG)));
 		LOG("[AimWpn] f=%d heading=%a pitch=%a aimH=%a ownerHdg=%hd taangH=%hd taangP=%hd angleGood=%d wDir=(%a,%a,%a) updir=(%a,%a,%a)",
 			gs->frameNum,
 			heading, pitch, aimHeading, owner->heading,

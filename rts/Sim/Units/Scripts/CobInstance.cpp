@@ -231,7 +231,7 @@ void CCobInstance::WindChanged(float heading, float speed)
 {
 	ZoneScoped;
 	Call(COBFN_SetSpeed, int(speed * 3000.0f));
-	Call(COBFN_SetDirection, short(heading * RAD2TAANG));
+	Call(COBFN_SetDirection, static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(heading * RAD2TAANG))));
 }
 
 
@@ -381,8 +381,8 @@ void CCobInstance::StartBuilding(float heading, float pitch)
 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
 
 	callinArgs[0] = 2;
-	callinArgs[1] = short(heading * RAD2TAANG);
-	callinArgs[2] = short(  pitch * RAD2TAANG);
+	callinArgs[1] = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(heading * RAD2TAANG)));
+	callinArgs[2] = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(  pitch * RAD2TAANG)));
 
 	Call(COBFN_StartBuilding, callinArgs);
 }
@@ -433,8 +433,8 @@ void CCobInstance::AimWeapon(int weaponNum, float heading, float pitch)
 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
 
 	callinArgs[0] = 2;
-	callinArgs[1] = short(heading * RAD2TAANG);
-	callinArgs[2] = short(  pitch * RAD2TAANG);
+	callinArgs[1] = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(heading * RAD2TAANG)));
+	callinArgs[2] = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(  pitch * RAD2TAANG)));
 
 	Call(COBFN_AimPrimary + COBFN_Weapon_Funcs * weaponNum, callinArgs, CBAimWeapon, weaponNum, nullptr);
 }

@@ -247,17 +247,46 @@ Only 1 caller of `LocalModelPiece::SetPieceSpaceMatrix()`:
 - The SetRot entries are from DIFFERENT units whose piece 16 happens to have similar Y values
 - OR there's a bug in the logging
 
-### Test Run 4: Pointer-Based Cross-Reference (in progress)
-Adding piece memory addresses (`ptr=%p`) to both `[SetRot]` and `[PieceAnim]` to definitively match
-SetRotation calls to unit 11816. Also widening `[TickTurn]` to log ALL units' piece 16 animations
-(not just unit 11816) with unit ID.
+### Test Run 4: Pointer-Based Cross-Reference (2026-03-01)
+
+#### Changes
+- Added `ptr=%p` to `[SetRot]` and `[PieceAnim]` logs for cross-referencing
+- Widened `[TickTurn]` to log ALL units with `ai.piece == 16` (not just unit 11816)
+
+#### Results
+- **Unit 11816 aimPiece ptr = 0x36fa9ab80** (confirmed via PieceAnim)
+- **SetRot for ptr=0x36fa9ab80 fires 2x/frame** (f=21431-21443): both no-ops (Y stays 0x1.77bbb8p+2)
+- **SetRot for ptr=0x36fa9ab80 at f=21444**: THREE calls:
+  1. `Y: 0x1.77bbb8p+2 -> 0x1.77bbb8p+2` (no-op, axis 0 or 2 anim)
+  2. `Y: 0x1.77bbb8p+2 -> 0x1.6caap+2` (first Y change)
+  3. `Y: 0x1.6caap+2 -> 0x1.617f26p+2` (second Y change, matches PieceAnim at f=21445)
+- **TickTurn for piece=16 fires for OTHER units** (529, 4158, 9822, 12189, 9435) - all axis=2
+- **TickTurn for unit 11816 piece=16: STILL EMPTY**
+- **TickSpin for unit 11816: EMPTY**
+
+#### Key Paradox
+`SetRotation()` IS definitely being called on unit 11816's piece 16 (ptr confirmed), but NONE of
+the 3 known callers (TickTurnAnim, TickSpinAnim, TurnNow) fire for this piece. There are ONLY 3
+callers of `LocalModelPiece::SetRotation()` in the entire codebase (verified via exhaustive grep).
+
+### Test Run 5: Caller Tracing (in progress)
+Added global `g_setRotCaller` variable:
+- Set to 1 before `SetRotation` in `TickTurnAnim`
+- Set to 2 before `SetRotation` in `TickSpinAnim`
+- Set to 3 before `SetRotation` in `TurnNow`
+- Logged in `SetPosOrRot` as `caller=%d`
+- Reset to 0 after logging
+
+If `caller=0` appears, something ELSE is calling SetRotation. If caller=1 but no [TickTurn] log,
+there's a bug in the TickTurn logging condition (e.g., ai.piece != 16 for this unit's animations).
+Also widened [TickSpin] to log all units' piece 16 (same as [TickTurn]).
 
 ### Remaining hypotheses
-1. **Another unit's Turn animation writes to a piece that unit 11816 reads** - POSSIBLE if
-   pieces are shared (unlikely) or there's a piece index aliasing issue
-2. **Different COB Turn destinations** - Still the strongest suspect for the root cause (WHY
-   the rotation directions differ), but first need to confirm WHICH unit's animation is involved
-3. **TickTurnAnim is called but logging doesn't fire** - Would indicate a bug in the logging condition
+1. **ai.piece != scriptPieceIndex for unit 11816** - The animation system might store a different
+   piece index than 16, but it maps to the same LocalModelPiece via `pieces[]`. This would cause
+   `ai.piece == 16` filter to miss it while SetRotation still fires for scriptPieceIndex==16.
+2. **Different COB Turn destinations** - Root cause for WHY rotations differ cross-platform.
+3. **Unknown 4th caller** - Would show as caller=0 in the trace.
 
 ## Key Architecture Notes
 - **SyncedPrimitive<T>**: Every write to SyncedFloat/SyncedInt calls `Sync::Assert()` -> `CSyncChecker::Sync()` -> feeds value into XXH3 running hash

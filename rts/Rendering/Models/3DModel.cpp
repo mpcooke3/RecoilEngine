@@ -19,6 +19,10 @@
 
 #include "System/Misc/TracyDefs.h"
 
+// Debug: tracks which function calls SetRotation
+// 0=unknown, 1=TickTurnAnim, 2=TickSpinAnim, 3=TurnNow
+int g_setRotCaller = 0;
+
 CR_BIND(LocalModelPiece, (nullptr))
 CR_REG_METADATA(LocalModelPiece, (
 	CR_MEMBER(pos),
@@ -482,11 +486,13 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 		return;
 
 	// Log ALL rotation changes for piece 16 (aim piece) near desync frame
+	extern int g_setRotCaller;
 	if (&dst == &rot && scriptPieceIndex == 16 && gs != nullptr && gs->frameNum >= 21430 && gs->frameNum <= 21470) {
-		LOG("[SetRot] f=%d piece=%d ptr=%p old=(%a,%a,%a) new=(%a,%a,%a) blockAnims=%d",
-			gs->frameNum, scriptPieceIndex, (void*)this,
-			dst.x, dst.y, dst.z, src.x, src.y, src.z, (int)blockScriptAnims);
+		LOG("[SetRot] f=%d piece=%d ptr=%p caller=%d old=(%a,%a,%a) new=(%a,%a,%a)",
+			gs->frameNum, scriptPieceIndex, (void*)this, g_setRotCaller,
+			dst.x, dst.y, dst.z, src.x, src.y, src.z);
 	}
+	g_setRotCaller = 0;
 
 	if (!dirty && !dst.same(src)) {
 		SetDirty();

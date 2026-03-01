@@ -483,8 +483,8 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 
 	// Log ALL rotation changes for piece 16 (aim piece) near desync frame
 	if (&dst == &rot && scriptPieceIndex == 16 && gs != nullptr && gs->frameNum >= 21430 && gs->frameNum <= 21470) {
-		LOG("[SetRot] f=%d piece=%d old=(%a,%a,%a) new=(%a,%a,%a) blockAnims=%d",
-			gs->frameNum, scriptPieceIndex,
+		LOG("[SetRot] f=%d piece=%d ptr=%p old=(%a,%a,%a) new=(%a,%a,%a) blockAnims=%d",
+			gs->frameNum, scriptPieceIndex, (void*)this,
 			dst.x, dst.y, dst.z, src.x, src.y, src.z, (int)blockScriptAnims);
 	}
 

@@ -346,8 +346,8 @@ void CWeapon::UpdateWeaponVectors()
 				unsigned int val; memcpy(&val, &aimMat.m[i], sizeof(val));
 				aimMatHash ^= val + 0x9e3779b9 + (aimMatHash << 6) + (aimMatHash >> 2);
 			}
-			LOG("[PieceAnim] f=%d aimPiece=%d rot=(%a,%a,%a) pos=(%a,%a,%a) matHash=%08x mat00=%a mat12=%a mat13=%a mat14=%a",
-				gs->frameNum, aimFromPiece,
+			LOG("[PieceAnim] f=%d aimPiece=%d ptr=%p rot=(%a,%a,%a) pos=(%a,%a,%a) matHash=%08x mat00=%a mat12=%a mat13=%a mat14=%a",
+				gs->frameNum, aimFromPiece, (void*)aimP,
 				aimRot.x, aimRot.y, aimRot.z,
 				aimPos2.x, aimPos2.y, aimPos2.z,
 				aimMatHash,

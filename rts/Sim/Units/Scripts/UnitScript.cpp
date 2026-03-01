@@ -182,16 +182,12 @@ bool CUnitScript::DoSpin(float& cur, float dest, float& speed, float accel, int 
 bool CUnitScript::TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) {
 	float3 rot = lmp.GetRotation();
 	rot[ai.axis] = ClampRad(rot[ai.axis]);
-	if (unit->id == 11816 && gs->frameNum >= 21440 && gs->frameNum <= 21470) {
+	if ((unit->id == 11816 || ai.piece == 16) && gs->frameNum >= 21440 && gs->frameNum <= 21470) {
 		float delta = math::fmod(ai.dest - rot[ai.axis] + math::THREEPI, math::TWOPI) - math::PI;
-		LOG("[TickTurn] f=%07d piece=%d axis=%d cur=%a dest=%a speed=%a effSpd=%a delta=%a sign=%d tickRate=%d",
-			gs->frameNum, ai.piece, ai.axis, rot[ai.axis], ai.dest, ai.speed, ai.speed / tickRate, delta, (delta > 0.0f ? 1 : -1), tickRate);
+		LOG("[TickTurn] f=%07d unit=%d piece=%d axis=%d ptr=%p cur=%a dest=%a speed=%a delta=%a",
+			gs->frameNum, unit->id, ai.piece, ai.axis, (void*)&lmp, rot[ai.axis], ai.dest, ai.speed / tickRate, delta);
 	}
 	const bool ret = TurnToward(rot[ai.axis], ai.dest, ai.speed / tickRate);
-	if (unit->id == 11816 && gs->frameNum >= 21440 && gs->frameNum <= 21470) {
-		LOG("[TickTurnPost] f=%07d piece=%d axis=%d newCur=%a done=%d",
-			gs->frameNum, ai.piece, ai.axis, rot[ai.axis], (int)ret);
-	}
 	lmp.SetRotation(rot);
 	return ret;
 }

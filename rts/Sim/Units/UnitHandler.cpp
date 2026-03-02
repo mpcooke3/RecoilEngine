@@ -1,6 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include <cassert>
+#include <cstring>
 
 #include "UnitHandler.h"
 #include "Unit.h"
@@ -435,6 +436,32 @@ void CUnitHandler::UpdateUnits()
 
 void CUnitHandler::UpdateUnitWeapons()
 {
+	// Compute piece rotation hash for cross-arch desync debugging
+	{
+		uint32_t pieceRotHash = 0;
+		for (size_t i = 0; i < activeUnits.size(); ++i) {
+			CUnit* unit = activeUnits[i];
+			const auto& pieces = unit->localModel.pieces;
+			for (size_t p = 0; p < pieces.size(); ++p) {
+				const float3& r = pieces[p].GetRotation();
+				uint32_t rx, ry, rz;
+				std::memcpy(&rx, &r.x, 4);
+				std::memcpy(&ry, &r.y, 4);
+				std::memcpy(&rz, &r.z, 4);
+				pieceRotHash ^= rx * 2654435761u;
+				pieceRotHash ^= ry * 2246822519u;
+				pieceRotHash ^= rz * 3266489917u;
+				pieceRotHash = (pieceRotHash << 13) | (pieceRotHash >> 19);
+			}
+		}
+		static FILE* prf = nullptr;
+		if (prf == nullptr) {
+			prf = fopen("/tmp/piece_rot_hash.txt", "w");
+			if (prf) setvbuf(prf, nullptr, _IOLBF, 0);
+		}
+		if (prf) fprintf(prf, "%d %08x\n", gs->frameNum, pieceRotHash);
+	}
+
 	{
 		SCOPED_TIMER("Sim::Unit::UpdateWeaponVectors");
 

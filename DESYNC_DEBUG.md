@@ -22,6 +22,16 @@ cd build-headless && make engine-headless -j$(nproc)
   "/tmp/desync-test/demos/2025-08-24_11-11-45-534_Full Metal Plate 1_2025.04.08.sdfz"
 ```
 
+## Final Status: ALL DESYNCS RESOLVED
+
+**906 sync checkpoints across entire 54,492-frame replay: ZERO cross-platform mismatches**
+
+Both fixes applied on branch `arm64-desync-test`:
+1. **Desync #1** (frame 21480): `short()` UB in CobInstance float-to-TAANG conversions — commit `67e08a16`
+2. **Desync #2** (frame 28158): `ClampRad` heading clamping [0,2π) instead of [-π,π) — commit `07de6019`
+
+---
+
 ## Ruled Out
 - SmoothHeightMesh SSE intrinsics (identical hash on both platforms)
 - Matrix44f multiply via sse2neon (10,000 self-checks, zero mismatches)
@@ -62,9 +72,31 @@ callinArgs[1] = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(
 
 ---
 
-## Desync #2: Piece Rotation → RNG Consumption Divergence (INVESTIGATING)
+## Desync #2: ClampRad Heading Clamping → Piece Rotation Divergence (FIXED)
 
-### Status: MECHANISM PROVEN — Hunting exact root cause of piece rotation divergence
+### Status: FIXED AND VERIFIED
+
+### Root Cause & Fix
+
+`ClampRad()` wraps angles to `[0, 2π)`, but heading values should be in `[-π, π)`. At boundary
+values near ±π, `ClampRad`'s `floor(f / TWOPI)` computation produces platform-dependent rounding
+on ARM64 vs x86_64, giving COB scripts different heading integers via `GetUnitVal` calls.
+
+**Fix**: Added `ClampRadPi()` (wraps to `[-π, π)`) and applied it at the same 4 sites as
+upstream PR [#2827](https://github.com/beyond-all-reason/RecoilEngine/pull/2827):
+
+1. `Weapon.cpp:532` — `ClampRadPi(heading - owner->heading * TAANG2RAD)` for AimWeapon
+2. `Unit.cpp:2388` — `ClampRadPi(GetHeadingFromVectorF(...) - heading * TAANG2RAD)` for wind heading
+3. `Builder.cpp:929` — `ClampRadPi(h - heading * TAANG2RAD)` for StartBuilding
+4. `LuaSyncedRead.cpp:4545` — `ClampRadPi(math::PI / 32768.0f * heading)` for GetUnitHeading
+
+**Verification (Test Run 17 — commit `07de6019`):**
+- **906 sync checkpoints across entire 54,492-frame replay: ZERO cross-platform mismatches**
+- Both platforms desync from demo (expected — ClampRadPi changes game behavior)
+- Piece rotation hashes now identical at old divergence point (frames 28132–28133)
+- Unit 24203 triparent TurnNow values were: ARM64 TAANG=16384, x86 TAANG=32765 (before fix)
+
+### Detailed Investigation Trail
 
 ### Test Run 11 Findings (per-frame sync checksums to `/tmp/sync_checksums.txt`)
 

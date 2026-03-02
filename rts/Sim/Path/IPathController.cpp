@@ -54,9 +54,9 @@ short GMTDefaultPathController::GetDeltaHeading(
 	short deltaHeading = newHeading - oldHeading;
 
 	if (deltaHeading > 0) {
-		deltaHeading = std::min(deltaHeading, short( maxTurnRate));
+		deltaHeading = std::min(deltaHeading, short(std::clamp(maxTurnRate, -32768.0f, 32767.0f)));
 	} else {
-		deltaHeading = std::max(deltaHeading, short(-maxTurnRate));
+		deltaHeading = std::max(deltaHeading, short(std::clamp(-maxTurnRate, -32768.0f, 32767.0f)));
 	}
 
 	// no orientation changes if not on ground

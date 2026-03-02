@@ -1806,11 +1806,15 @@ void CGame::SimFrame() {
 		SCOPED_SPECIAL_TIMER("Sim");
 
 #ifdef SYNCCHECK
-		// Cross-arch desync debugging: log intermediate checksums at subsystem boundaries
-		// Log only at key frames to reduce log size (every 60 frames + around desync)
-		const bool logSyncMid = (gs->frameNum % 60 == 0) || (gs->frameNum >= 28140 && gs->frameNum <= 28200);
+		// Cross-arch desync debugging: dump per-frame checksums to a dedicated file
+		// for easy diffing between ARM64 and x86_64
+		static FILE* syncFile = nullptr;
+		if (syncFile == nullptr) {
+			syncFile = fopen("/tmp/sync_checksums.txt", "w");
+			if (syncFile) setvbuf(syncFile, nullptr, _IOLBF, 0);
+		}
 		#define SYNC_MID_LOG(tag) \
-			if (logSyncMid) { LOG("[SyncMid] frame=%d after=%s chk=%08x rngCnt=%llu", gs->frameNum, tag, CSyncChecker::GetChecksum(), gsRNG.GetCallCount()); }
+			if (syncFile) { fprintf(syncFile, "%d %s %08x %llu\n", gs->frameNum, tag, CSyncChecker::GetChecksum(), gsRNG.GetCallCount()); }
 #else
 		#define SYNC_MID_LOG(tag)
 #endif

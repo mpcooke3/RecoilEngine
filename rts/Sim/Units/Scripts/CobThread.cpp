@@ -720,6 +720,12 @@ bool CCobThread::Tick()
 					break;
 				}
 				r6 = cobInst->GetUnitVal(r1, r2, r3, r4, r5);
+				// Log GET calls for unit 24203 around divergence frames
+				if (cobInst->GetUnit()->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
+					LOG("[U24203CobGET] f=%d val=%d p1=%d p2=%d p3=%d p4=%d result=%d (0x%08x) func=%s",
+						gs->frameNum, r1, r2, r3, r4, r5, r6, (unsigned)r6,
+						cobFile->scriptNames[callStack[0].functionId].c_str());
+				}
 				PushDataStack(r6);
 			} break;
 			case ADD: {
@@ -776,6 +782,13 @@ bool CCobThread::Tick()
 				r1 = GET_LONG_PC();
 				r2 = GET_LONG_PC();
 				r3 = PopDataStack();
+				// Log raw TAANG integer for unit 24203 around divergence frames
+				if (cobInst->GetUnit()->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
+					LOG("[U24203CobTurnNow] f=%d sp=%d axis=%d TAANG=%d (0x%08x) func=%s stackDepth=%d",
+						gs->frameNum, r1, r2, r3, (unsigned)r3,
+						cobFile->scriptNames[callStack[0].functionId].c_str(),
+						(int)dataStack.size());
+				}
 				cobInst->TurnNow(r1, r2, r3);
 			} break;
 

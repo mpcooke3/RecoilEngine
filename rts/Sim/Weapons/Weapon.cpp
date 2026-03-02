@@ -531,7 +531,7 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	// FIXME: convert CSolidObject::heading to radians too.
 	const float aimHeading = ClampRad(heading - owner->heading * TAANG2RAD);
 
-	// Log AimWeapon inputs for unit 11816
+	// Log AimWeapon inputs for all units near desync zone
 	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
 		const int16_t taangH = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(aimHeading * RAD2TAANG)));
 		const int16_t taangP = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(pitch * RAD2TAANG)));
@@ -539,6 +539,13 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 			gs->frameNum, owner->id, weaponNum,
 			heading, pitch, aimHeading, owner->heading,
 			taangH, taangP, (int)angleGood,
+			wantedDir.x, wantedDir.y, wantedDir.z);
+	}
+	// Detailed logging for unit 24203 around divergence
+	if (owner->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
+		LOG("[U24203AimWpnW] f=%d wpn=%d aimH=%a pitch=%a aimFrom=(%a,%a,%a) wDir=(%a,%a,%a)",
+			gs->frameNum, weaponNum, aimHeading, pitch,
+			aimFromPos.x, aimFromPos.y, aimFromPos.z,
 			wantedDir.x, wantedDir.y, wantedDir.z);
 	}
 

@@ -9,6 +9,7 @@
 
 #include "Game/GameHelper.h"
 #include "Game/GlobalUnsynced.h"
+#include "Sim/Misc/GlobalSynced.h"
 #include "Map/Ground.h"
 #include "Sim/Misc/GroundBlockingObjectMap.h"
 #include "Sim/Misc/TeamHandler.h"
@@ -435,6 +436,12 @@ void CCobInstance::AimWeapon(int weaponNum, float heading, float pitch)
 	callinArgs[0] = 2;
 	callinArgs[1] = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(heading * RAD2TAANG)));
 	callinArgs[2] = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(  pitch * RAD2TAANG)));
+
+	// Log AimWeapon callin for unit 24203 around divergence
+	if (unit->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
+		LOG("[U24203AimWpn] f=%07d wpn=%d heading=%a pitch=%a hTAANG=%d pTAANG=%d",
+			gs->frameNum, weaponNum, heading, pitch, (int)callinArgs[1], (int)callinArgs[2]);
+	}
 
 	Call(COBFN_AimPrimary + COBFN_Weapon_Funcs * weaponNum, callinArgs, CBAimWeapon, weaponNum, nullptr);
 }

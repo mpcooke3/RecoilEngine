@@ -504,6 +504,13 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 				gs->frameNum, g_setRotUnitId, scriptPieceIndex, (void*)this, g_setRotCaller,
 				dst.x, dst.y, dst.z, src.x, src.y, src.z);
 		}
+		// Log ALL SetRotation calls for unit 24203 around divergence frames
+		// caller: 1=TickTurnAnim, 2=TickSpinAnim, 3=TurnNow
+		if (g_setRotUnitId == 24203 && gs->frameNum >= 28130 && gs->frameNum <= 28135) {
+			LOG("[SetRot24203] f=%d sp=%d caller=%d old=(%a,%a,%a) new=(%a,%a,%a)",
+				gs->frameNum, scriptPieceIndex, g_setRotCaller,
+				dst.x, dst.y, dst.z, src.x, src.y, src.z);
+		}
 	}
 	g_setRotCaller = 0;
 	g_setRotUnitId = -1;

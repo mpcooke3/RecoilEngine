@@ -62,88 +62,203 @@ callinArgs[1] = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(
 
 ---
 
-## Desync #2: Piece Rotation Divergence (INVESTIGATING)
+## Desync #2: Piece Rotation → RNG Consumption Divergence (INVESTIGATING)
 
-### Status: ROOT CAUSE NARROWED — PIECE ROTATIONS DIVERGE PRE-FRAME 28140
+### Status: MECHANISM PROVEN — Hunting exact root cause of piece rotation divergence
 
-### Test Run 8 Findings (per-frame SyncMid + phase logging, frames 28140-28200)
+### Test Run 11 Findings (per-frame sync checksums to `/tmp/sync_checksums.txt`)
 
-**Per-frame SyncMid analysis:**
-- Frames 28140-28155: ALL checksums MATCH
-- Frame 28156: Checksums match but UnitHandler RNG counts differ (+13 x86)
-- Frame 28157: Checksums match but RNG wobble continues
+**CRITICAL DISCOVERY: Per-frame sync checksums logged to dedicated file for ALL frames.**
+
+**Sync checksum comparison (ARM64 vs x86_64):**
+- **Frames 0-28155: ALL CHECKSUMS BIT-FOR-BIT IDENTICAL** — synced state is perfectly deterministic
+- **Frame 28156: Checksums still identical, but RNG counts diverge** (ARM64=26261055, x86=26261068, diff=+13 x86)
+- **Frame 28157: Checksums still identical, RNG gap flips** (ARM64=26262919, x86=26262915, diff=-4 x86)
 - **Frame 28158: FIRST CHECKSUM DIVERGENCE** — ARM64=40ab26ed, x86=e5b9a10b
 
-**UnitHandler phase breakdown at frame 28156 (first RNG divergence):**
+**Frame 28156 per-subsystem breakdown:**
 
-| Phase | ARM64 | x86_64 | Diff |
-|-------|-------|--------|------|
-| del/move/qdel/los | 0 | 0 | 0 |
-| **slow** | **403** | **403** | **0** |
-| **upd** | **1195** | **1199** | **+4 x86** |
-| **wpn** | **75** | **84** | **+9 x86** |
-| total | 1673 | 1686 | +13 |
+| Subsystem | ARM64 chk | x86 chk | ARM64 RNG | x86 RNG | Match? |
+|-----------|-----------|---------|-----------|---------|--------|
+| FrameStart | 2bccafbc | 2bccafbc | 26259382 | 26259382 | YES |
+| GameFrame | 2bccafbc | 2bccafbc | 26259382 | 26259382 | YES |
+| Map | 2bccafbc | 2bccafbc | 26259382 | 26259382 | YES |
+| **UnitHandler** | **2b3b01ac** | **2b3b01ac** | **26261055** | **26261068** | chk=YES, **rng=NO (+13)** |
+| Projectiles | 2b3b01ac | 2b3b01ac | 26261057 | 26261070 | chk=YES, rng=NO |
+| **Features+Scripts** | **c8b5c417** | **c8b5c417** | **26261133** | **26261137** | chk=YES, **rng=NO (+4)** |
+| FrameEnd | c8b5c417 | c8b5c417 | 26261133 | 26261137 | chk=YES, rng=NO (+4) |
 
-SlowUpdate is identical. The divergence is in the **unit Update** and **Weapons** phases.
+**Interpretation:**
+- Synced state entering frame 28156 is IDENTICAL (same checksum, same RNG count)
+- During UnitHandler, x86 makes +13 more gsRNG calls despite identical synced state
+- The extra RNG calls must come from weapon code whose execution depends on UNSYNCED piece rotations
+- gsRNG (game-synced RNG) is consumed by weapon firing/accuracy code
+- After Features+Scripts, the RNG gap reduces to +4 (animations partially compensate)
+- By frame 28158, the accumulated RNG offset causes different synced decisions → checksum diverges
 
-**SetRot analysis:**
-- x86 has 8 more SetRot entries (17024 vs 17016) at frame 28156
-- When sorted by content (stripping pointers and callers), **piece=1 rotation values diverge**:
-  - ARM64: `(0x1.921fb6p+0, 0, 0x1.2d97c8p+2)` ≈ **(π/2, 0, 3π/2)**
-  - x86_64: `(0x1.92164ap+1, 0, 0x1.922922p+1)` ≈ **(3.14148, 0, 3.14183)**
-- These are **wildly different angles** — NOT a small rounding error
-- The SAME divergence exists at **frame 28140** (the start of our logging window!)
-- The divergent pieces are `aimPiece=1` (weapon aim pieces) on 3 different units
+### Proven Mechanism (Desync #2)
 
-**TickSpin/TickTurn analysis:**
-- All TickSpin `cur`, `speed`, `accel` values **MATCH** between platforms at frame 28140
-- The divergent piece=1 rotation is on the **X and Z axes** (not the spin axis Y)
-- These are STATIC rotations — set once and never changed by active animations
-- x86 has 12 more TickTurn entries (additional weapon aim turns triggered by different targeting)
+```
+1. UNSYNCED piece rotations diverge between platforms (WHEN? TBD)
+     ↓
+2. Weapon aim computes aimFromPos from piece model space matrix (UNSYNCED)
+     ↓
+3. Different aimFromPos → different wantedDir → different heading/pitch
+     ↓
+4. Different weapon aim → different firing decisions
+     ↓
+5. Different firing → different gsRNG consumption (accuracy spread, salvo error)
+     ↓
+6. gsRNG offset accumulates over frames
+     ↓
+7. Eventually (frame 28158), RNG offset causes different synced state → checksum diverges
+```
 
-### Causation Chain
-1. Weapon aim pieces have different static X/Z rotations (set before frame 28140)
-2. Different piece geometry → different muzzle positions and aim vectors
-3. Different targeting decisions → some weapons aim on x86 but not ARM64 (and vice versa)
-4. Different aim commands → different RNG consumption in Update (aim callbacks) and Weapons phases
-5. Checksum diverges at frame 28158 when the accumulated RNG difference affects synced state
+### Key Proven Facts (Test Runs 10-11)
+1. **Float math is bit-identical**: DoSpin, ClampRad, speed accumulation all produce identical results on both platforms (unit 5415 spin tracked through 10000+ frames)
+2. **All synced state identical through frame 28155**: 28156 frames of perfect sync (every subsystem, every frame)
+3. **FPU settings match**: Both platforms use round-to-nearest, denormals enabled (no FZ/DAZ/FTZ)
+4. **No FMA on either platform**: x86 uses `-mno-fma`, 0 FMA instructions in binary. ARM64 uses `-ffp-contract=off`
+5. **streflop math functions identical**: sin, cos, atan2, floor, fmod all use portable C libm
+6. **`math::fmod` uses streflop**: Despite `streflop_cond.h` using `std::fmod` when streflop disabled, the enabled path goes through `streflop_libm::__ieee754_fmodf` (portable C)
 
-### Key Question: WHEN Were the Divergent Rotations Set?
+### Additional Fixes Applied (did NOT fix desync #2)
+- `short(turnRate)` UB in HoverAirMoveType.cpp (lines 674, 676) — clamped to short range
+- `short(maxTurnRate)` UB in IPathController.cpp (lines 57, 59) — clamped to short range
 
-The ARM64 values are clean TAANG conversions:
-- π/2 = 16384 × TAANG2RAD (exact)
-- 3π/2 = 49152 × TAANG2RAD (exact, or -16384 as int16_t)
+### Test Run 12 Findings: Piece Rotation Hash Comparison
 
-The x86 values are NOT clean TAANG conversions (3.14148 / TAANG2RAD ≈ 32757.4).
-This suggests the x86 values were modified by animation accumulation from a different starting point,
-or set from a different source value entirely.
+**CRITICAL: Piece rotations first diverge at frame 28133, unit 24203.**
+
+Per-frame piece rotation hash (XOR of all piece rotations before weapon update):
+- **Frames 0–28132: ALL HASHES BIT-FOR-BIT IDENTICAL** between ARM64 and x86
+- **Frame 28133: FIRST DIVERGENCE** — ARM64=`85602099`, x86=`2929d19b`
+- Piece rotations continue diverging for all subsequent frames
+- Synced state (checksums + RNG counts) remain IDENTICAL through frame 28155 despite piece rotation divergence
+- Piece rotation divergence at frame 28133 → RNG consumption divergence at frame 28156 → checksum divergence at frame 28158
+
+### Test Run 13 Findings: Per-Unit Hash Identification
+
+Added per-unit piece rotation hash for frames 28130–28136.
+
+**First divergent unit: unit 24203 (18 pieces)**
+
+| Frame | ARM64 hash | x86 hash | Match? |
+|-------|-----------|----------|--------|
+| 28130 | c2a73f35 | c2a73f35 | YES |
+| 28131 | 4d40bdf5 | 4d40bdf5 | YES |
+| 28132 | 71f289cc | 71f289cc | YES |
+| **28133** | **87127fbb** | **a3eafeed** | **NO** |
+| 28134 | 7723f8c7 | 53db7991 | NO |
+
+**Second divergent unit: unit 28641 (18 pieces)** — diverges one frame later at 28134.
+
+### Test Run 14 Findings: Per-Piece Rotation Divergence
+
+PieceDetail logging dumps every non-zero piece rotation for unit 24203 at frames 28132–28134 (using localModel piece indices).
+
+**First divergent piece: localModel piece 9 (frame 28133)**
+
+| Platform | rx (hex) | rx (float) | ry | rz (hex) | rz (float) |
+|----------|----------|-----------|-----|----------|-----------|
+| ARM64 | 3fc90fdb | pi/2 (1.5708) | 0 | 4096cbe4 | 3pi/2 (4.7124) |
+| x86_64 | 40490b25 | ~pi (3.1413) | 0 | 40491491 | ~pi (3.1419) |
+
+- At frame 28132: piece 9 has (0,0,0) on BOTH platforms — no divergence
+- At frame 28133: piece 9 has COMPLETELY DIFFERENT values — not close, not drift, entirely different rotations
+- All other pieces are BIT-FOR-BIT IDENTICAL at frame 28133
+
+**Key observation: the values are NOT incrementally close (pi/2 vs pi). This is NOT floating-point drift.**
+
+### Test Run 15 Findings: CRITICAL DISCOVERY — Script vs Model Piece Index Mismatch
+
+Added spin/turn animation tracing for script piece 9 of unit 24203.
+
+**The spin animations are BIT-FOR-BIT IDENTICAL on both platforms:**
+All spin tick values (cur, destSpd, speed, accel) for script piece 9, axes 0 and 1, match perfectly across ARM64 and x86 through all frames 28125–28138. The spin is a slow rotation accumulating ~0.07 rad/frame.
+
+**BUT: the spin tick `cur` values DON'T match the PieceDetail values.**
+- Spin tick at f=28132, axis=0: `cur=0x1.73bc0cp-3` (0.181)
+- PieceDetail at f=28132, localModel piece 9: `rx=0` (all zeros — piece not logged)
+
+**Root cause of the discrepancy: SCRIPT PIECE INDEX != LOCALMODEL PIECE INDEX.**
+
+`CobInstance::MapScriptToModelPieces()` maps COB script piece names to model pieces by **name lookup**, not by index. So `script->pieces[9]` (a pointer) may point to `localModel.pieces[N]` where N != 9.
+
+The PieceDetail hash iterates `localModel.pieces` by index. So what we called "localModel piece 9" is not the same as "script piece 9". The spin animation is correctly tracked on script piece 9 (matching on both platforms), but the divergence is on a DIFFERENT localModel piece whose localModel index happens to be 9.
+
+### CRITICAL QUESTION: What is setting localModel piece 9's rotation?
+
+Since script piece 9's animations are identical, the divergence must be on a different script piece that maps to localModel index 9. We need:
+1. The piece name mapping (script index → localModel index → name) for unit 24203
+2. Which script piece maps to localModel index 9
+3. What animation/command is changing THAT piece
+
+### Frame Update Order (affects when piece rotations change)
+
+```
+Frame N:
+  1. UnitHandler (includes UpdateUnitWeapons)
+     a. Piece rotation hash computed (reflects state from Frame N-1's changes)
+     b. UpdateWeaponVectors — reads piece rotations for aim positions
+     c. UpdateWeapons — weapon AimWeapon callins can call TurnNow (INSTANT rotation set)
+  2. PathManager
+  3. ProjectileHandler
+  4. Features+Scripts (animation engine tick)
+     a. cobEngine->Tick() — processes COB thread sleeps/wakes
+     b. Turn/Spin animation ticks (TickTurnAnim/TickSpinAnim)
+     c. This is where spin animations update piece rotations incrementally
+```
+
+Piece 9 in localModel goes from (0,0,0) at hash time frame 28132 to (pi/2,0,3pi/2) at hash time frame 28133. Between these hash computations:
+- Frame 28132's weapon update (step 1c) — could call TurnNow
+- Frame 28132's animation tick (step 4b) — could have spin/turn finishing
+- Frame 28133 steps before hash — no known path changes pieces
+
+### Hypotheses (Updated)
+
+1. **A TurnNow from a weapon AimWeapon callin** sets localModel piece 9 during frame 28132's weapon update. The callin parameters differ because the COB script reads heading from weapon aim, which depends on piece rotations — but all piece rotations are identical at that point, so parameters should be identical. UNLESS the callin happens at a different time due to weapon timing.
+
+2. **A Turn animation completes (snaps to destination)** on localModel piece 9 during frame 28132's animation tick. If the destination was set by a COB callin that received platform-different heading, the snap target would differ. But we need to identify which script piece maps to localModel 9.
+
+3. **AnimationMT**: If multi-threaded animation ticking causes nondeterministic results when two animations on the same piece interact (turn overriding spin, etc.), this could produce different rotations per platform.
 
 ### Ruled Out for Desync #2
-1. **`math::floor` platform difference** — RULED OUT. streflop::floor is portable C. Cross-platform test confirms identical.
-2. **Other `short(int)` casts** — RULED OUT. Integer narrowing is well-defined.
-3. **`int(float)` UB** — RULED OUT for game values.
-4. **All `short(float)` casts** — FIXED (3 in CobInstance.cpp + 2 in Weapon.cpp debug logging).
-5. **`math::sqrt`** — RULED OUT. ARM64 `__builtin_sqrtf` (FSQRT) and x86 `SQRTSS` are both IEEE 754 correctly rounded.
-6. **`math::atan2`** — Uses `streflop_libm::__ieee754_atan2f` on both platforms (portable C implementation).
-7. **`isqrt2_nosse`** — Same Newton-Raphson on both platforms, with `-ffp-contract=off`.
-8. **`-ffp-contract=off`** — Verified set in top-level CMakeLists.txt for all ARM64 builds.
-9. **sse2neon precision** — `SSE2NEON_PRECISE_DIV=1`, `SSE2NEON_PRECISE_MINMAX=1`, `SSE2NEON_PRECISE_DP=1` all set.
+1. **`math::floor` platform difference** — RULED OUT. Portable C on both.
+2. **`math::fmod` platform difference** — RULED OUT. Portable C on both.
+3. **`short(float)` UB in movement code** — FIXED but did not affect desync
+4. **Denormal handling** — RULED OUT. FZ=0, DAZ=0, FTZ=0 on both
+5. **`math::sqrt`** — RULED OUT. IEEE 754 correctly rounded on both
+6. **`math::isqrt` (isqrt2_nosse)** — Same Newton-Raphson, `-ffp-contract=off`
+7. **`-ffp-contract=off`** — Verified in CMakeLists.txt
+8. **sse2neon precision** — All PRECISE flags set
+9. **Script piece 9 spin animations** — RULED OUT. Bit-identical on both platforms.
 
-### Next Steps
-1. **Add unit IDs to SetRot logging** — currently SetRot only has piece index and pointer, no unit ID
-2. **Add targeted logging at early frames** — trace when the divergent piece=1 X/Z rotations were first set to non-zero
-3. **Expand logging range** — need to go back much earlier than frame 28140 to find when the divergence began
-4. **Check model initialization** — verify S3O model loading doesn't set non-zero piece rotations
+### Plan for Run 16: Comprehensive Logging to Single-Shot Root Cause
 
-### Debug Logging State (Test Run 8)
+Need to add ALL of the following in one run:
 
-| File | Tags | Frame Range |
-|------|------|-------------|
-| UnitScript.cpp | [TurnNow], [TurnCmd], [TickTurn], [TickSpin], [SpinCmd], [TurnTwd] | 28140-28200 |
-| Weapon.cpp | [AimWpn], [AimCB], [PieceEvo], [WantedDir], [TargetPos], [TryTarget] | 28140-28200 |
-| UnitHandler.cpp | [SlowUpd], [UnitHandler] | 28140-28200 |
-| 3DModel.cpp | [SetRot] | 28140-28200 |
-| Game.cpp | [SyncMid] | every 60 frames + 28140-28200 per-frame |
+1. **Piece name mapping** for unit 24203: dump `localModel index → scriptPieceIndex → name` for all pieces (once at frame 28132)
+2. **PieceDetail with script index**: add `scriptPieceIndex` to each PieceDetail log line so we can correlate localModel pieces with script pieces
+3. **ALL SetRotation calls** for unit 24203 around frames 28130–28135: log in `3DModel.cpp::SetPosOrRot()` for g_setRotUnitId == 24203, including caller ID, script piece index, old/new values
+4. **ALL Turn/TurnNow/Spin commands** for unit 24203 (all pieces) around frames 28130–28135: catch any animation command on any piece of this unit
+5. **ALL animation ticks** for unit 24203 (all pieces) around frames 28130–28135: catch TickTurnAnim/TickSpinAnim on any piece
+6. **COB callin parameters** for unit 24203: log AimWeapon heading/pitch values passed to COB around these frames
+
+This should capture the COMPLETE chain from: COB callin → animation command → SetRotation → piece rotation value, for every piece of unit 24203, on both platforms. The diff will show exactly where the divergence enters.
+
+### Debug Logging State (Current — Run 15)
+
+| File | What | Output |
+|------|------|--------|
+| Game.cpp | Per-frame sync checksums (all subsystems, ALL frames) | `/tmp/sync_checksums.txt` |
+| UnitHandler.cpp | Per-frame piece rotation hash (before weapon update) | `/tmp/piece_rot_hash.txt` |
+| UnitHandler.cpp | Per-unit piece rotation hash | `/tmp/piece_rot_per_unit.txt` (frames 28130-28136) |
+| UnitHandler.cpp | Per-piece rotation detail for unit 24203 | LOG output (frames 28132-28134) |
+| UnitHandler.cpp | Sub-phase RNG consumption | frames 28140-28200 |
+| UnitScript.cpp | Unit 24203 piece 9 (script) Turn/TurnNow/Spin/TickSpin | LOG (frames 28125-28140) |
+| UnitScript.cpp | Unit 5415 piece=1 rotation tracking | all frames |
+| Weapon.cpp | [AimWpn] logging | frames 28140-28200 |
 
 ## Architecture Notes
 - **COB VM**: Pure integer stack machine. No float math. TAANG<->radian conversion at C++ boundary only.
@@ -152,8 +267,16 @@ or set from a different source value entirely.
 - `math::sqrt` -> `__builtin_sqrtf` on ARM64 (IEEE 754 FSQRT)
 - `math::atan2/sin/cos/etc` -> `streflop::` -> portable libm
 - **RAD2TAANG** = 65536 / (2*pi), **TAANG2RAD** = 2*pi / 65536
+- **AnimationMT**: Default=true, ticks animations in parallel per-unit via `for_mt()`, with sequential cleanup
+
+### gsRNG Consumption in Weapon Path
+- `SlowUpdate()`: 2 calls (errorVectorAdd, predictSpeedMod) — unconditional, runs every SLOWUPDATE tick
+- `UpdateFire()`: 1 call (salvoError) — conditional on weapon firing
+- `FireImpl()`: 1-2 calls (spray angle, TTL) — conditional on weapon firing
+- All `FireImpl` calls depend on `TryTarget()` which uses `aimFromPos` (piece-rotation-dependent)
 
 ### Log Files
+- Test Run 11 (per-frame checksums): ARM64 `/tmp/arm64_run11.log`, x86_64 `/tmp/x86_run11.log`
+- Test Run 11 sync checksums: ARM64 `/tmp/arm64_sync_checksums.txt`, x86_64 via SSH
+- Test Run 10 (unit 5415 tracking): ARM64 `/tmp/arm64_run10.log`
 - Test Run 8 (phase logging): ARM64 `/tmp/arm64_run8.log`, x86_64 `/tmp/x86_run8.log`
-- Test Run 7 (with short() fix): ARM64 `/tmp/arm64_run7.log`, x86_64 `/tmp/x86_run7.log`
-- Test Run 6 (pre-fix): ARM64 `/tmp/arm64_run6.log`, x86_64 `/tmp/x86_run6.log`

@@ -413,7 +413,7 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	// for COB, this sets <angleGood> to AimWeapon's return value when finished
 	// for LUS, there exists a callout to set the <angleGood> member directly
 	// FIXME: convert CSolidObject::heading to radians too.
-	owner->script->AimWeapon(weaponNum, ClampRad(heading - owner->heading * TAANG2RAD), pitch);
+	owner->script->AimWeapon(weaponNum, ClampRadPi(heading - owner->heading * TAANG2RAD), pitch);
 	return true;
 }
 

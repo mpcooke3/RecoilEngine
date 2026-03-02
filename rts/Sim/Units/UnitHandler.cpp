@@ -467,6 +467,19 @@ void CUnitHandler::UpdateUnitWeapons()
 				}
 				if (puf) fprintf(puf, "%d %d %08x %d\n", gs->frameNum, unit->id, unitHash, (int)pieces.size());
 			}
+			// Detailed per-piece logging for unit 24203
+			if (unit->id == 24203 && gs->frameNum >= 28132 && gs->frameNum <= 28134) {
+				for (size_t p2 = 0; p2 < pieces.size(); ++p2) {
+					const float3& r2 = pieces[p2].GetRotation();
+					uint32_t rx2, ry2, rz2;
+					std::memcpy(&rx2, &r2.x, 4);
+					std::memcpy(&ry2, &r2.y, 4);
+					std::memcpy(&rz2, &r2.z, 4);
+					if (rx2 != 0 || ry2 != 0 || rz2 != 0)
+						LOG("[PieceDetail] f=%d u=24203 p=%d rx=%08x ry=%08x rz=%08x (%.10e %.10e %.10e)",
+							gs->frameNum, (int)p2, rx2, ry2, rz2, (double)r2.x, (double)r2.y, (double)r2.z);
+				}
+			}
 		}
 		static FILE* prf = nullptr;
 		if (prf == nullptr) {

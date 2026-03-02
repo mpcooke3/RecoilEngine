@@ -529,7 +529,7 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	// for COB, this sets <angleGood> to AimWeapon's return value when finished
 	// for LUS, there exists a callout to set the <angleGood> member directly
 	// FIXME: convert CSolidObject::heading to radians too.
-	const float aimHeading = ClampRad(heading - owner->heading * TAANG2RAD);
+	const float aimHeading = ClampRadPi(heading - owner->heading * TAANG2RAD);
 
 	// Log AimWeapon inputs for all units near desync zone
 	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {

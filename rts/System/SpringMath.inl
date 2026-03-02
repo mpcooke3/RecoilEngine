@@ -160,6 +160,21 @@ inline float ClampRad(float f)
 
 inline void ClampRad(float* f) { *f = ClampRad(*f); }
 
+// Clamp angle to [-pi, pi) — correct for headings/directions
+inline float ClampRadPi(float f)
+{
+	// first wrap to [0, 2pi)
+	f = f - math::TWOPI * math::floor(f / math::TWOPI);
+
+	// now shift to [-pi, pi)
+	if (f >= math::PI)
+		f -= math::TWOPI;
+
+	f += 0.0f; // turn -0.0f into +0.0f
+
+	return f;
+}
+
 inline float3 ClampRad(float3 v)
 {
 	v.x = ClampRad(v.x);

@@ -627,6 +627,16 @@ void CGame::ClientReadNet()
 				if (haveServerDemo)
 					localSyncChecksums[gs->frameNum] = CSyncChecker::GetChecksum();
 
+				// write per-frame checksums to file for cross-arch comparison
+				{
+					static FILE* syncFile = fopen("/tmp/sync_checksums.txt", "w");
+					if (syncFile) {
+						fprintf(syncFile, "%d FrameEnd %08x\n", gs->frameNum, CSyncChecker::GetChecksum());
+						if ((gs->frameNum & 255) == 0)
+							fflush(syncFile);
+					}
+				}
+
 				// reset checksum every 4096 frames =~ 2.5 minutes
 				if ((gs->frameNum & 4095) == 0)
 					CSyncChecker::NewFrame();

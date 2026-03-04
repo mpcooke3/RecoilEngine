@@ -19,11 +19,6 @@
 
 #include "System/Misc/TracyDefs.h"
 
-// Debug: tracks which function calls SetRotation
-// 0=unknown, 1=TickTurnAnim, 2=TickSpinAnim, 3=TurnNow
-int g_setRotCaller = 0;
-int g_setRotUnitId = -1;
-
 CR_BIND(LocalModelPiece, (nullptr))
 CR_REG_METADATA(LocalModelPiece, (
 	CR_MEMBER(pos),
@@ -485,35 +480,6 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 	RECOIL_DETAILED_TRACY_ZONE;
 	if (blockScriptAnims)
 		return;
-
-	extern int g_setRotCaller;
-	extern int g_setRotUnitId;
-	if (&dst == &rot && gs != nullptr) {
-		// One-shot detector: log when piece rotation X or Z first becomes non-zero
-		if (scriptPieceIndex == 1 && (
-			(dst.x == 0.0f && src.x != 0.0f) ||
-			(dst.z == 0.0f && src.z != 0.0f))) {
-			LOG("[PieceRotInit] f=%d unit=%d piece=%d ptr=%p caller=%d "
-				"old=(%a,%a,%a) new=(%a,%a,%a)",
-				gs->frameNum, g_setRotUnitId, scriptPieceIndex, (void*)this, g_setRotCaller,
-				dst.x, dst.y, dst.z, src.x, src.y, src.z);
-		}
-		// Verbose logging near desync frame
-		if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-			LOG("[SetRot] f=%d unit=%d piece=%d ptr=%p caller=%d old=(%a,%a,%a) new=(%a,%a,%a)",
-				gs->frameNum, g_setRotUnitId, scriptPieceIndex, (void*)this, g_setRotCaller,
-				dst.x, dst.y, dst.z, src.x, src.y, src.z);
-		}
-		// Log ALL SetRotation calls for unit 24203 around divergence frames
-		// caller: 1=TickTurnAnim, 2=TickSpinAnim, 3=TurnNow
-		if (g_setRotUnitId == 24203 && gs->frameNum >= 28130 && gs->frameNum <= 28135) {
-			LOG("[SetRot24203] f=%d sp=%d caller=%d old=(%a,%a,%a) new=(%a,%a,%a)",
-				gs->frameNum, scriptPieceIndex, g_setRotCaller,
-				dst.x, dst.y, dst.z, src.x, src.y, src.z);
-		}
-	}
-	g_setRotCaller = 0;
-	g_setRotUnitId = -1;
 
 	if (!dirty && !dst.same(src)) {
 		SetDirty();

@@ -182,26 +182,7 @@ bool CUnitScript::DoSpin(float& cur, float dest, float& speed, float accel, int 
 bool CUnitScript::TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) {
 	float3 rot = lmp.GetRotation();
 	rot[ai.axis] = ClampRad(rot[ai.axis]);
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		float delta = math::fmod(ai.dest - rot[ai.axis] + math::THREEPI, math::TWOPI) - math::PI;
-		LOG("[TickTurn] f=%07d unit=%d piece=%d axis=%d ptr=%p cur=%a dest=%a speed=%a delta=%a",
-			gs->frameNum, unit->id, ai.piece, ai.axis, (void*)&lmp, rot[ai.axis], ai.dest, ai.speed / tickRate, delta);
-	}
-	// Track unit 5415 piece=1 ALL turns (any frame)
-	if (unit->id == 5415 && ai.piece == 1) {
-		LOG("[TrackTurn] f=%07d unit=5415 piece=1 axis=%d cur=%a dest=%a speed=%a rot=(%a,%a,%a)",
-			gs->frameNum, ai.axis, rot[ai.axis], ai.dest, ai.speed / tickRate,
-			rot.x, rot.y, rot.z);
-	}
-	// Track ALL turn ticks for unit 24203 around divergence
-	if (unit->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
-		float delta = math::fmod(ai.dest - rot[ai.axis] + math::THREEPI, math::TWOPI) - math::PI;
-		LOG("[U24203TickTurn] f=%07d sp=%d axis=%d cur=%a dest=%a speed=%a delta=%a",
-			gs->frameNum, ai.piece, ai.axis, rot[ai.axis], ai.dest, ai.speed / tickRate, delta);
-	}
 	const bool ret = TurnToward(rot[ai.axis], ai.dest, ai.speed / tickRate);
-	{ extern int g_setRotCaller; g_setRotCaller = 1; }
-	{ extern int g_setRotUnitId; g_setRotUnitId = unit->id; }
 	lmp.SetRotation(rot);
 	return ret;
 }
@@ -209,32 +190,7 @@ bool CUnitScript::TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai)
 bool CUnitScript::TickSpinAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) {
 	float3 rot = lmp.GetRotation();
 	rot[ai.axis] = ClampRad(rot[ai.axis]);
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		LOG("[TickSpin] f=%07d unit=%d piece=%d axis=%d ptr=%p cur=%a destSpd=%a speed=%a accel=%a",
-			gs->frameNum, unit->id, ai.piece, ai.axis, (void*)&lmp, rot[ai.axis], ai.dest, ai.speed, ai.accel);
-	}
-	// Track ALL spin ticks for unit 24203 around divergence
-	if (unit->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
-		LOG("[U24203TickSpin] f=%07d sp=%d axis=%d cur=%a destSpd=%a speed=%a accel=%a",
-			gs->frameNum, ai.piece, ai.axis, rot[ai.axis], ai.dest, ai.speed, ai.accel);
-	}
-	// Track unit 5415 piece=1 ALL spins (every frame — log every 10th)
-	if (unit->id == 5415 && ai.piece == 1) {
-		float prevZ = rot[ai.axis];
-		const bool ret = DoSpin(rot[ai.axis], ai.dest, ai.speed, ai.accel, tickRate);
-		if (gs->frameNum % 10 == 0 || gs->frameNum < 300) {
-			LOG("[TrackSpin] f=%07d unit=5415 piece=1 axis=%d prev=%a new=%a speed=%a rot=(%a,%a,%a)",
-				gs->frameNum, ai.axis, prevZ, rot[ai.axis], ai.speed,
-				rot.x, rot.y, rot.z);
-		}
-		{ extern int g_setRotCaller; g_setRotCaller = 2; }
-		{ extern int g_setRotUnitId; g_setRotUnitId = unit->id; }
-		lmp.SetRotation(rot);
-		return ret;
-	}
 	const bool ret = DoSpin(rot[ai.axis], ai.dest, ai.speed, ai.accel, tickRate);
-	{ extern int g_setRotCaller; g_setRotCaller = 2; }
-	{ extern int g_setRotUnitId; g_setRotUnitId = unit->id; }
 	lmp.SetRotation(rot);
 	return ret;
 }
@@ -446,20 +402,6 @@ void CUnitScript::AddAnim(AnimType type, int piece, int axis, float speed, float
 void CUnitScript::Spin(int piece, int axis, float speed, float accel)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		LOG("[SpinCmd] f=%07d unit=%d piece=%d axis=%d speed=%a accel=%a",
-			gs->frameNum, unit->id, piece, axis, speed, accel);
-	}
-	// Track ALL spin commands for unit 24203 around divergence
-	if (unit->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
-		LOG("[U24203Spin] f=%07d sp=%d axis=%d speed=%a accel=%a",
-			gs->frameNum, piece, axis, speed, accel);
-	}
-	// Track unit 5415 piece=1 spin commands
-	if (unit->id == 5415 && piece == 1) {
-		LOG("[TrackSpinCmd] f=%07d unit=5415 piece=1 axis=%d speed=%a accel=%a",
-			gs->frameNum, axis, speed, accel);
-	}
 	auto animInfoIt = FindAnim(ASpin, piece, axis);
 
 	// if we are already spinning, we may have to decelerate to the new speed
@@ -490,16 +432,6 @@ void CUnitScript::Spin(int piece, int axis, float speed, float accel)
 void CUnitScript::StopSpin(int piece, int axis, float decel)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
-	// Track unit 5415 piece=1 stop-spin commands
-	if (unit->id == 5415 && piece == 1) {
-		LOG("[TrackStopSpin] f=%07d unit=5415 piece=1 axis=%d decel=%a",
-			gs->frameNum, axis, decel);
-	}
-	// Track ALL stop-spin commands for unit 24203 around divergence
-	if (unit->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
-		LOG("[U24203StopSpin] f=%07d sp=%d axis=%d decel=%a",
-			gs->frameNum, piece, axis, decel);
-	}
 	auto animInfoIt = FindAnim(ASpin, piece, axis);
 
 	if (decel <= 0.0f) {
@@ -518,20 +450,6 @@ void CUnitScript::StopSpin(int piece, int axis, float decel)
 void CUnitScript::Turn(int piece, int axis, float speed, float destination)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		LOG("[TurnCmd] f=%07d unit=%d piece=%d axis=%d speed=%a rawDest=%a clampDest=%a",
-			gs->frameNum, unit->id, piece, axis, math::fabs(speed), destination, ClampRad(destination));
-	}
-	// Track unit 5415 piece=1 turn commands
-	if (unit->id == 5415 && piece == 1) {
-		LOG("[TrackTurnCmd] f=%07d unit=5415 piece=1 axis=%d speed=%a dest=%a",
-			gs->frameNum, axis, math::fabs(speed), ClampRad(destination));
-	}
-	// Track ALL turn commands for unit 24203 around divergence
-	if (unit->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
-		LOG("[U24203Turn] f=%07d sp=%d axis=%d speed=%a rawDest=%a clampDest=%a",
-			gs->frameNum, piece, axis, math::fabs(speed), destination, ClampRad(destination));
-	}
 	AddAnim(ATurn, piece, axis, math::fabs(speed), ClampRad(destination), 0);
 }
 
@@ -569,20 +487,6 @@ void CUnitScript::TurnNow(int piece, int axis, float destination)
 		ShowUnitScriptError("[US::TurnNow] invalid script piece index");
 		return;
 	}
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		LOG("[TurnNow] f=%07d unit=%d piece=%d axis=%d rawDest=%a clampDest=%a",
-			gs->frameNum, unit->id, piece, axis, destination, ClampRad(destination));
-	}
-	// Track unit 5415 piece=1 ALL turn-nows (any frame)
-	if (unit->id == 5415 && piece == 1) {
-		LOG("[TrackTurnNow] f=%07d unit=5415 piece=1 axis=%d rawDest=%a clampDest=%a",
-			gs->frameNum, axis, destination, ClampRad(destination));
-	}
-	// Track ALL turn-now commands for unit 24203 around divergence
-	if (unit->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
-		LOG("[U24203TurnNow] f=%07d sp=%d axis=%d rawDest=%a clampDest=%a",
-			gs->frameNum, piece, axis, destination, ClampRad(destination));
-	}
 	destination = ClampRad(destination);
 
 	LocalModelPiece* p = pieces[piece];
@@ -590,8 +494,6 @@ void CUnitScript::TurnNow(int piece, int axis, float destination)
 	float3 rot = p->GetRotation();
 	rot[axis] = destination;
 
-	{ extern int g_setRotCaller; g_setRotCaller = 3; }
-	{ extern int g_setRotUnitId; g_setRotUnitId = unit->id; }
 	p->SetRotation(rot);
 }
 

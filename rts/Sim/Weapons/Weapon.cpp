@@ -276,13 +276,7 @@ void CWeapon::UpdateWeaponErrorVector()
 
 void CWeapon::AimScriptFinished(bool retCode)
 {
-	const bool prevAngleGood = angleGood;
 	angleGood = retCode;
-
-	// Log AimWeapon callback result for unit 11816
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		LOG("[AimCB] f=%d unit=%d wpn=%d retCode=%d angleGood: %d->%d", gs->frameNum, owner->id, weaponNum, (int)retCode, (int)prevAngleGood, (int)angleGood);
-	}
 }
 
 void CWeapon::UpdateWeaponVectors()
@@ -301,93 +295,6 @@ void CWeapon::UpdateWeaponVectors()
 		aimFromPos = owner->pos + UpVector * 10;
 	}
 
-	// Comprehensive piece transform evolution logging for unit 11816
-	// NOTE: SyncedFloat3 members (frontdir/rightdir/updir) MUST be cast to (float) for variadic LOG
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		LOG("[PieceEvo] f=%d muzzlePos=(%a,%a,%a) aimFrom=(%a,%a,%a) relMuzzle=(%a,%a,%a) relAim=(%a,%a,%a) ownerPos=(%a,%a,%a) front=(%a,%a,%a) right=(%a,%a,%a) up=(%a,%a,%a) wDir=(%a,%a,%a) aimPc=%d mzlPc=%d",
-			gs->frameNum,
-			weaponMuzzlePos.x, weaponMuzzlePos.y, weaponMuzzlePos.z,
-			aimFromPos.x, aimFromPos.y, aimFromPos.z,
-			relWeaponMuzzlePos.x, relWeaponMuzzlePos.y, relWeaponMuzzlePos.z,
-			relAimFromPos.x, relAimFromPos.y, relAimFromPos.z,
-			owner->pos.x, owner->pos.y, owner->pos.z,
-			(float)owner->frontdir.x, (float)owner->frontdir.y, (float)owner->frontdir.z,
-			(float)owner->rightdir.x, (float)owner->rightdir.y, (float)owner->rightdir.z,
-			(float)owner->updir.x, (float)owner->updir.y, (float)owner->updir.z,
-			weaponDir.x, weaponDir.y, weaponDir.z,
-			aimFromPiece, muzzlePiece);
-
-		// Log piece animation state (rotation/position) and model-space matrix hash
-		if (owner->script->PieceExists(muzzlePiece)) {
-			const LocalModelPiece* mzlP = owner->script->GetScriptLocalModelPiece(muzzlePiece);
-			const float3 mzlRot = mzlP->GetRotation();
-			const float3 mzlPos = mzlP->GetPosition();
-			const CMatrix44f& mzlMat = mzlP->GetModelSpaceMatrix();
-			// Hash the 16 matrix floats for compact comparison
-			unsigned int mzlMatHash = 0;
-			for (int i = 0; i < 16; ++i) {
-				unsigned int val; memcpy(&val, &mzlMat.m[i], sizeof(val));
-				mzlMatHash ^= val + 0x9e3779b9 + (mzlMatHash << 6) + (mzlMatHash >> 2);
-			}
-			LOG("[PieceAnim] f=%d mzlPiece=%d rot=(%a,%a,%a) pos=(%a,%a,%a) matHash=%08x mat00=%a mat12=%a mat13=%a mat14=%a",
-				gs->frameNum, muzzlePiece,
-				mzlRot.x, mzlRot.y, mzlRot.z,
-				mzlPos.x, mzlPos.y, mzlPos.z,
-				mzlMatHash,
-				mzlMat.m[0], mzlMat.m[12], mzlMat.m[13], mzlMat.m[14]);
-		}
-		if (owner->script->PieceExists(aimFromPiece) && aimFromPiece != muzzlePiece) {
-			const LocalModelPiece* aimP = owner->script->GetScriptLocalModelPiece(aimFromPiece);
-			const float3 aimRot = aimP->GetRotation();
-			const float3 aimPos2 = aimP->GetPosition();
-			const CMatrix44f& aimMat = aimP->GetModelSpaceMatrix();
-			unsigned int aimMatHash = 0;
-			for (int i = 0; i < 16; ++i) {
-				unsigned int val; memcpy(&val, &aimMat.m[i], sizeof(val));
-				aimMatHash ^= val + 0x9e3779b9 + (aimMatHash << 6) + (aimMatHash >> 2);
-			}
-			// Log all 16 matrix elements for aimPiece to find exact divergence
-			LOG("[PieceAnim] f=%d aimPiece=%d ptr=%p rot=(%a,%a,%a) pos=(%a,%a,%a) matHash=%08x",
-				gs->frameNum, aimFromPiece, (void*)aimP,
-				aimRot.x, aimRot.y, aimRot.z,
-				aimPos2.x, aimPos2.y, aimPos2.z,
-				aimMatHash);
-			LOG("[AimMat] f=%d m0=%a m1=%a m2=%a m3=%a m4=%a m5=%a m6=%a m7=%a m8=%a m9=%a m10=%a m11=%a m12=%a m13=%a m14=%a m15=%a",
-				gs->frameNum,
-				aimMat.m[0], aimMat.m[1], aimMat.m[2], aimMat.m[3],
-				aimMat.m[4], aimMat.m[5], aimMat.m[6], aimMat.m[7],
-				aimMat.m[8], aimMat.m[9], aimMat.m[10], aimMat.m[11],
-				aimMat.m[12], aimMat.m[13], aimMat.m[14], aimMat.m[15]);
-
-			// Log piece 16's pieceSpaceMat (local transform, before parent composition)
-			const CMatrix44f& psMat = aimP->GetPieceSpaceMatrix();
-			LOG("[AimPSMat] f=%d m0=%a m1=%a m2=%a m3=%a m4=%a m5=%a m6=%a m7=%a m8=%a m9=%a m10=%a m11=%a m12=%a m13=%a m14=%a m15=%a",
-				gs->frameNum,
-				psMat.m[0], psMat.m[1], psMat.m[2], psMat.m[3],
-				psMat.m[4], psMat.m[5], psMat.m[6], psMat.m[7],
-				psMat.m[8], psMat.m[9], psMat.m[10], psMat.m[11],
-				psMat.m[12], psMat.m[13], psMat.m[14], psMat.m[15]);
-
-			// Log parent piece matrix to isolate whether divergence is local or inherited
-			const LocalModelPiece* parentP = aimP->parent;
-			if (parentP != nullptr) {
-				const CMatrix44f& parentMat = parentP->GetModelSpaceMatrix();
-				unsigned int parentMatHash = 0;
-				for (int i = 0; i < 16; ++i) {
-					unsigned int val; memcpy(&val, &parentMat.m[i], sizeof(val));
-					parentMatHash ^= val + 0x9e3779b9 + (parentMatHash << 6) + (parentMatHash >> 2);
-				}
-				LOG("[ParentMat] f=%d parentPiece=%d rot=(%a,%a,%a) matHash=%08x m0=%a m1=%a m2=%a m3=%a m4=%a m5=%a m6=%a m7=%a m8=%a m9=%a m10=%a m11=%a m12=%a m13=%a m14=%a m15=%a",
-					gs->frameNum, parentP->GetScriptPieceIndex(),
-					parentP->GetRotation().x, parentP->GetRotation().y, parentP->GetRotation().z,
-					parentMatHash,
-					parentMat.m[0], parentMat.m[1], parentMat.m[2], parentMat.m[3],
-					parentMat.m[4], parentMat.m[5], parentMat.m[6], parentMat.m[7],
-					parentMat.m[8], parentMat.m[9], parentMat.m[10], parentMat.m[11],
-					parentMat.m[12], parentMat.m[13], parentMat.m[14], parentMat.m[15]);
-			}
-		}
-	}
 }
 
 
@@ -400,18 +307,6 @@ void CWeapon::UpdateWantedDir()
 		wantedDir = owner->frontdir;
 	}
 
-	// Log wantedDir, currentTargetPos, aimFromPos for unit 11816
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		const float3 diff = currentTargetPos - aimFromPos;
-		const float sql = diff.SqLength();
-		LOG("[WantedDir] f=%d tgtPos=(%a,%a,%a) aimFrom=(%a,%a,%a) diff=(%a,%a,%a) sqLen=%a wDir=(%a,%a,%a) onlyFwd=%d",
-			gs->frameNum,
-			currentTargetPos.x, currentTargetPos.y, currentTargetPos.z,
-			aimFromPos.x, aimFromPos.y, aimFromPos.z,
-			diff.x, diff.y, diff.z, sql,
-			wantedDir.x, wantedDir.y, wantedDir.z,
-			(int)onlyForward);
-	}
 }
 
 
@@ -446,15 +341,6 @@ void CWeapon::Update()
 		Attack(owner->curTarget);
 
 	currentTargetPos = GetLeadTargetPos(currentTarget);
-
-	// Log currentTargetPos for unit 11816
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		LOG("[TargetPos] f=%d wpn=%d tgtPos=(%a,%a,%a) tgtType=%d tgtUnit=%d",
-			gs->frameNum, weaponNum,
-			currentTargetPos.x, currentTargetPos.y, currentTargetPos.z,
-			(int)currentTarget.type,
-			(currentTarget.type == Target_Unit && currentTarget.unit) ? currentTarget.unit->id : -1);
-	}
 
 	if (!UpdateStockpile())
 		return;
@@ -531,24 +417,6 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	// FIXME: convert CSolidObject::heading to radians too.
 	const float aimHeading = ClampRadPi(heading - owner->heading * TAANG2RAD);
 
-	// Log AimWeapon inputs for all units near desync zone
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		const int16_t taangH = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(aimHeading * RAD2TAANG)));
-		const int16_t taangP = static_cast<int16_t>(static_cast<uint16_t>(static_cast<int32_t>(pitch * RAD2TAANG)));
-		LOG("[AimWpn] f=%d unit=%d wpn=%d heading=%a pitch=%a aimH=%a ownerHdg=%hd taangH=%hd taangP=%hd angleGood=%d wDir=(%a,%a,%a)",
-			gs->frameNum, owner->id, weaponNum,
-			heading, pitch, aimHeading, owner->heading,
-			taangH, taangP, (int)angleGood,
-			wantedDir.x, wantedDir.y, wantedDir.z);
-	}
-	// Detailed logging for unit 24203 around divergence
-	if (owner->id == 24203 && gs->frameNum >= 28128 && gs->frameNum <= 28136) {
-		LOG("[U24203AimWpnW] f=%d wpn=%d aimH=%a pitch=%a aimFrom=(%a,%a,%a) wDir=(%a,%a,%a)",
-			gs->frameNum, weaponNum, aimHeading, pitch,
-			aimFromPos.x, aimFromPos.y, aimFromPos.z,
-			wantedDir.x, wantedDir.y, wantedDir.z);
-	}
-
 	owner->script->AimWeapon(weaponNum, aimHeading, pitch);
 	return true;
 }
@@ -593,51 +461,16 @@ bool CWeapon::CanFire(bool ignoreAngleGood, bool ignoreTargetType, bool ignoreRe
 void CWeapon::UpdateFire()
 {
 	ZoneScoped;
-	// Debug: weapon fire logging for unit 11816 - periodic tracking + detailed near desync
-	const bool isUnit11816 = (owner->id == 11816 && weaponNum == 0);
-	const bool dbgWpn = isUnit11816 && (gs->frameNum >= 21450 || (gs->frameNum % 100 == 0));
-
-	if (!CanFire(false, false, false)) {
-		if (dbgWpn) {
-			LOG("[WpnFire] f=%d unit=%d CanFire=FALSE angleGood=%d salvoLeft=%d nextSalvo=%d reloadStatus=%d",
-				gs->frameNum, owner->id, (int)angleGood, salvoLeft, nextSalvo, reloadStatus);
-		}
+	if (!CanFire(false, false, false))
 		return;
-	}
 
 	if (fastQueryPointUpdate) {
 		UpdateWeaponPieces(false);
 		UpdateWeaponVectors();
 	}
 
-	if (dbgWpn) {
-		LOG("[WpnFire] f=%d unit=%d CanFire=TRUE muzzlePos=(%a,%a,%a) tgtPos=(%a,%a,%a)",
-			gs->frameNum, owner->id,
-			weaponMuzzlePos.x, weaponMuzzlePos.y, weaponMuzzlePos.z,
-			currentTargetPos.x, currentTargetPos.y, currentTargetPos.z);
-		// Log TryTarget sub-checks
-		const bool testTarget = TestTarget(currentTargetPos, currentTarget);
-		const bool testRange = TestRange(currentTargetPos, currentTarget);
-		const float groundH = CGround::GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z);
-		const bool groundOk = !(weaponMuzzlePos.y < groundH);
-		LOG("[WpnFire] f=%d unit=%d TestTarget=%d TestRange=%d groundOk=%d (muzzY=%a groundH=%a) aimFromPos=(%a,%a,%a)",
-			gs->frameNum, owner->id, (int)testTarget, (int)testRange, (int)groundOk,
-			weaponMuzzlePos.y, groundH,
-			aimFromPos.x, aimFromPos.y, aimFromPos.z);
-		if (testRange) {
-			const float heightDiff = currentTargetPos.y - aimFromPos.y;
-			const float targetDist = aimFromPos.SqDistance2D(currentTargetPos);
-			LOG("[WpnFire] f=%d unit=%d range detail: heightDiff=%a targetDist=%a range=%a cylinderTgt=%a",
-				gs->frameNum, owner->id, heightDiff, targetDist, range, weaponDef->cylinderTargeting);
-		}
-	}
-
-	if (!TryTarget(currentTargetPos, currentTarget, true)) {
-		if (dbgWpn) {
-			LOG("[WpnFire] f=%d unit=%d TryTarget=FALSE (weapon did NOT fire)", gs->frameNum, owner->id);
-		}
+	if (!TryTarget(currentTargetPos, currentTarget, true))
 		return;
-	}
 
 	// pre-check if we got enough resources (so CobBlockShot gets only called when really possible to shoot)
 	if (!weaponDef->stockpile && !owner->HaveResources(weaponDef->cost))
@@ -1116,51 +949,20 @@ bool CWeapon::TryTarget(const float3 tgtPos, const SWeaponTarget& trg, bool preF
 	RECOIL_DETAILED_TRACY_ZONE;
 	assert(GetLeadTargetPos(trg).SqDistance(tgtPos) < Square(250.0f));
 
-	const bool dbgTT = (gs->frameNum >= 28140 && gs->frameNum <= 28200 && preFire);
-
-	if (!TestTarget(tgtPos, trg)) {
-		if (dbgTT) LOG("[TryTarget] f=%d unit=%d FAIL=TestTarget", gs->frameNum, owner->id);
+	if (!TestTarget(tgtPos, trg))
 		return false;
-	}
 
 	// auto-targeted units are allowed to be out of range
 	// (UpdateFire will still block firing at such units)
-	if (!trg.isAutoTarget && !TestRange(tgtPos, trg)) {
-		if (dbgTT) {
-			const float heightDiff = tgtPos.y - aimFromPos.y;
-			const float targetDist = aimFromPos.SqDistance2D(tgtPos);
-			float wRange = 0.0f;
-			if (trg.type == Target_Pos || weaponDef->cylinderTargeting < 0.01f) {
-				wRange = GetRange2D(0.0f, heightDiff * weaponDef->heightmod);
-			} else {
-				if ((weaponDef->cylinderTargeting * range) > (math::fabsf(heightDiff) * weaponDef->heightmod))
-					wRange = GetRange2D(0.0f, 0.0f);
-			}
-			LOG("[TryTarget] f=%d unit=%d FAIL=TestRange targetDist=%a wRange2=%a diff=%a",
-				gs->frameNum, owner->id, targetDist, wRange * wRange,
-				targetDist - wRange * wRange);
-		}
+	if (!trg.isAutoTarget && !TestRange(tgtPos, trg))
 		return false;
-	}
 
 	// no LOF if aim-position is below ground (not in HFLOF, is overridden)
-	if (preFire && (weaponMuzzlePos.y < CGround::GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z))) {
-		if (dbgTT) LOG("[TryTarget] f=%d unit=%d FAIL=GroundCheck muzzleY=%a groundH=%a",
-			gs->frameNum, owner->id, weaponMuzzlePos.y,
-			CGround::GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z));
+	if (preFire && (weaponMuzzlePos.y < CGround::GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z)))
 		return false;
-	}
-
-	const bool lofResult = HaveFreeLineOfFire(GetAimFromPos(preFire), tgtPos, trg);
-	if (dbgTT) {
-		LOG("[TryTarget] f=%d unit=%d LOF=%d aimFrom=(%a,%a,%a) tgt=(%a,%a,%a)",
-			gs->frameNum, owner->id, (int)lofResult,
-			GetAimFromPos(preFire).x, GetAimFromPos(preFire).y, GetAimFromPos(preFire).z,
-			tgtPos.x, tgtPos.y, tgtPos.z);
-	}
 
 	// TODO: add a forcedUserTarget (forced-fire mode enabled with CTRL e.g.) and skip the tests below
-	return lofResult;
+	return HaveFreeLineOfFire(GetAimFromPos(preFire), tgtPos, trg);
 }
 
 

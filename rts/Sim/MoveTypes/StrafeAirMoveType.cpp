@@ -345,68 +345,30 @@ static float3 GetControlSurfaceAngles(
 }
 
 
-// Debug: file for cross-arch desync logging
-static FILE* desyncDbgFile = nullptr;
-static FILE* GetDesyncDbgFile() {
-	if (desyncDbgFile == nullptr) {
-		desyncDbgFile = fopen("/tmp/desync_rng_debug.txt", "w");
-		if (desyncDbgFile) setvbuf(desyncDbgFile, nullptr, _IOLBF, 0);
-	}
-	return desyncDbgFile;
-}
-
 static int SelectLoopBackManeuver(
 	const SyncedFloat3& frontdir,
 	const SyncedFloat3& rightdir,
 	const float4& spd,
 	float turnRadius,
-	float groundDist,
-	int ownerID
+	float groundDist
 ) {
 	RECOIL_DETAILED_TRACY_ZONE;
-	const uint64_t rngBefore = gsRNG.GetCallCount();
 
 	// do not start looping if already banked
-	if (math::fabs(rightdir.y) > 0.05f) {
-		if (FILE* f = GetDesyncDbgFile())
-			fprintf(f, "[SLB] f=%d unit=%d BANKED rightdir.y=%a rngCnt=%llu\n",
-				gs->frameNum, ownerID, float(rightdir.y), rngBefore);
+	if (math::fabs(rightdir.y) > 0.05f)
 		return CStrafeAirMoveType::MANEUVER_FLY_STRAIGHT;
-	}
 
 	const float tr = TurnRadius(turnRadius, spd.w);
-	const bool outerBranch = (groundDist > tr);
-	int result = CStrafeAirMoveType::MANEUVER_FLY_STRAIGHT;
-	float rngVal = -1.0f;
-	bool rngConsumed = false;
-	const char* branchName = "NONE";
 
-	if (outerBranch) {
-		branchName = "OUTER";
-		if (math::fabs(frontdir.y) <= 0.2f) {
-			rngVal = gsRNG.NextFloat();
-			rngConsumed = true;
-			if (rngVal > 0.3f)
-				result = CStrafeAirMoveType::MANEUVER_IMMELMAN_INV;
-		}
+	if (groundDist > tr) {
+		if (math::fabs(frontdir.y) <= 0.2f && gsRNG.NextFloat() > 0.3f)
+			return CStrafeAirMoveType::MANEUVER_IMMELMAN_INV;
 	} else {
-		branchName = "INNER";
-		if (frontdir.y > -0.2f) {
-			rngVal = gsRNG.NextFloat();
-			rngConsumed = true;
-			if (rngVal > 0.7f)
-				result = CStrafeAirMoveType::MANEUVER_IMMELMAN;
-		}
+		if (frontdir.y > -0.2f && gsRNG.NextFloat() > 0.7f)
+			return CStrafeAirMoveType::MANEUVER_IMMELMAN;
 	}
 
-	if (FILE* f = GetDesyncDbgFile()) {
-		fprintf(f, "[SLB] f=%d unit=%d spd.w=%a TR=%a gDist=%a branch=%s fdir.y=%a rng=%s rngVal=%a result=%d rngCnt=%llu\n",
-			gs->frameNum, ownerID, spd.w, tr, groundDist, branchName,
-			float(frontdir.y), rngConsumed ? "YES" : "NO", rngVal, result,
-			gsRNG.GetCallCount());
-	}
-
-	return result;
+	return CStrafeAirMoveType::MANEUVER_FLY_STRAIGHT;
 }
 
 
@@ -447,8 +409,6 @@ CStrafeAirMoveType::CStrafeAirMoveType(CUnit* owner): AAirMoveType(owner)
 	maxRudder = owner->unitDef->maxRudder;
 	attackSafetyDistance = 0.0f;
 
-	const uint64_t rngBeforeCtor = gsRNG.GetCallCount();
-
 	maxRudder   *= (0.99f + gsRNG.NextFloat() * 0.02f);
 	maxElevator *= (0.99f + gsRNG.NextFloat() * 0.02f);
 	maxAileron  *= (0.99f + gsRNG.NextFloat() * 0.02f);
@@ -461,12 +421,6 @@ CStrafeAirMoveType::CStrafeAirMoveType(CUnit* owner): AAirMoveType(owner)
 	crashRudder    = gsRNG.NextFloat() - 0.5f;
 
 	SetMaxSpeed(maxSpeedDef);
-
-	// Debug: log construction with gsRNG state
-	if (FILE* f = GetDesyncDbgFile()) {
-		fprintf(f, "[CTOR] f=%d unit=%d rngBefore=%llu rngAfter=%llu accRate=%a invDrag=%a wantedHeight=%a\n",
-			gs->frameNum, owner->id, rngBeforeCtor, gsRNG.GetCallCount(), accRate, invDrag, wantedHeight);
-	}
 }
 
 
@@ -551,7 +505,7 @@ bool CStrafeAirMoveType::Update()
 
 							const float altitude = CGround::GetHeightAboveWater(owner->pos.x, owner->pos.z) - lastPos.y;
 
-							if ((maneuverState = SelectLoopBackManeuver(frontdir, rightdir, lastSpd, turnRadius, altitude, owner->id)) == MANEUVER_IMMELMAN_INV)
+							if ((maneuverState = SelectLoopBackManeuver(frontdir, rightdir, lastSpd, turnRadius, altitude)) == MANEUVER_IMMELMAN_INV)
 								maneuverSubState = 0;
 						}
 					}
@@ -1162,8 +1116,6 @@ void CStrafeAirMoveType::UpdateAirPhysics(const float4& controlInputs, const flo
 			1.0f,
 			1.0f,
 		};
-
-		// Debug: removed unit-specific logging (cause is RNG offset from SelectLoopBackManeuver)
 
 		frontdir += (rightdir * yprDeltas.x * yprScales.x); // yaw
 		frontdir += (updir    * yprDeltas.y * yprScales.y); // pitch

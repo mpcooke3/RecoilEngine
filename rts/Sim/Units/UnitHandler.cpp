@@ -374,25 +374,13 @@ void CUnitHandler::SlowUpdateUnits()
 	updateBoundingVolumeList.clear();
 	{
 		ZoneScopedN("Sim::Unit::SlowUpdateST");
-		const bool logPerUnit = (gs->frameNum >= 28140 && gs->frameNum <= 28200);
 		for (size_t i = idxBeg; i < idxEnd; ++i) {
 			CUnit* unit = activeUnits[i];
-			const uint64_t rngPre = logPerUnit ? gsRNG.GetCallCount() : 0;
 
 			unit->SanityCheck();
 			unit->SlowUpdate();
 			unit->SlowUpdateWeapons();
 			unit->SanityCheck();
-
-			if (logPerUnit) {
-				const uint64_t rngPost = gsRNG.GetCallCount();
-				if (rngPost != rngPre) {
-					LOG("[SlowUpd] f=%d unit=%d rng=%llu->%llu delta=%llu",
-						gs->frameNum, unit->id,
-						(unsigned long long)rngPre, (unsigned long long)rngPost,
-						(unsigned long long)(rngPost - rngPre));
-				}
-			}
 
 			if (!unit->isDead && unit->localModel.GetBoundariesNeedsRecalc())
 				updateBoundingVolumeList.emplace_back(unit);
@@ -436,68 +424,6 @@ void CUnitHandler::UpdateUnits()
 
 void CUnitHandler::UpdateUnitWeapons()
 {
-	// Compute piece rotation hash for cross-arch desync debugging
-	{
-		uint32_t pieceRotHash = 0;
-		const bool logPerUnit = (gs->frameNum >= 28130 && gs->frameNum <= 28136);
-		for (size_t i = 0; i < activeUnits.size(); ++i) {
-			CUnit* unit = activeUnits[i];
-			const auto& pieces = unit->localModel.pieces;
-			uint32_t unitHash = 0;
-			for (size_t p = 0; p < pieces.size(); ++p) {
-				const float3& r = pieces[p].GetRotation();
-				uint32_t rx, ry, rz;
-				std::memcpy(&rx, &r.x, 4);
-				std::memcpy(&ry, &r.y, 4);
-				std::memcpy(&rz, &r.z, 4);
-				unitHash ^= rx * 2654435761u;
-				unitHash ^= ry * 2246822519u;
-				unitHash ^= rz * 3266489917u;
-				unitHash = (unitHash << 13) | (unitHash >> 19);
-				pieceRotHash ^= rx * 2654435761u;
-				pieceRotHash ^= ry * 2246822519u;
-				pieceRotHash ^= rz * 3266489917u;
-				pieceRotHash = (pieceRotHash << 13) | (pieceRotHash >> 19);
-			}
-			if (logPerUnit) {
-				static FILE* puf = nullptr;
-				if (puf == nullptr) {
-					puf = fopen("/tmp/piece_rot_per_unit.txt", "w");
-					if (puf) setvbuf(puf, nullptr, _IOLBF, 0);
-				}
-				if (puf) fprintf(puf, "%d %d %08x %d\n", gs->frameNum, unit->id, unitHash, (int)pieces.size());
-			}
-			// Detailed per-piece logging for unit 24203, include script piece index
-			if (unit->id == 24203 && gs->frameNum >= 28132 && gs->frameNum <= 28134) {
-				for (size_t p2 = 0; p2 < pieces.size(); ++p2) {
-					const float3& r2 = pieces[p2].GetRotation();
-					uint32_t rx2, ry2, rz2;
-					std::memcpy(&rx2, &r2.x, 4);
-					std::memcpy(&ry2, &r2.y, 4);
-					std::memcpy(&rz2, &r2.z, 4);
-					if (rx2 != 0 || ry2 != 0 || rz2 != 0)
-						LOG("[PieceDetail] f=%d u=24203 lm=%d sp=%d rx=%08x ry=%08x rz=%08x (%.10e %.10e %.10e)",
-							gs->frameNum, (int)p2, (int)pieces[p2].GetScriptPieceIndex(),
-							rx2, ry2, rz2, (double)r2.x, (double)r2.y, (double)r2.z);
-				}
-				// Also dump the piece name mapping once
-				if (gs->frameNum == 28132) {
-					for (size_t p2 = 0; p2 < pieces.size(); ++p2) {
-						LOG("[PieceMap] u=24203 lm=%d sp=%d name=%s",
-							(int)p2, (int)pieces[p2].GetScriptPieceIndex(),
-							pieces[p2].original->name.c_str());
-					}
-				}
-			}
-		}
-		static FILE* prf = nullptr;
-		if (prf == nullptr) {
-			prf = fopen("/tmp/piece_rot_hash.txt", "w");
-			if (prf) setvbuf(prf, nullptr, _IOLBF, 0);
-		}
-		if (prf) fprintf(prf, "%d %08x\n", gs->frameNum, pieceRotHash);
-	}
-
 	{
 		SCOPED_TIMER("Sim::Unit::UpdateWeaponVectors");
 
@@ -527,31 +453,13 @@ void CUnitHandler::Update()
 {
 	inUpdateCall = true;
 
-	const uint64_t rng0 = gsRNG.GetCallCount();
 	DeleteUnits();
-	const uint64_t rng1 = gsRNG.GetCallCount();
 	UpdateUnitMoveTypes();
-	const uint64_t rng2 = gsRNG.GetCallCount();
 	QueueDeleteUnits();
-	const uint64_t rng3 = gsRNG.GetCallCount();
 	UpdateUnitLosStates();
-	const uint64_t rng4 = gsRNG.GetCallCount();
 	SlowUpdateUnits();
-	const uint64_t rng5 = gsRNG.GetCallCount();
 	UpdateUnits();
-	const uint64_t rng6 = gsRNG.GetCallCount();
 	UpdateUnitWeapons();
-	const uint64_t rng7 = gsRNG.GetCallCount();
-
-	// Log sub-phase RNG consumption near desync zone
-	if (gs->frameNum >= 28140 && gs->frameNum <= 28200) {
-		LOG("[UnitHandler] f=%d del=%llu move=%llu qdel=%llu los=%llu slow=%llu upd=%llu wpn=%llu total=%llu",
-			gs->frameNum,
-			(unsigned long long)(rng1-rng0), (unsigned long long)(rng2-rng1),
-			(unsigned long long)(rng3-rng2), (unsigned long long)(rng4-rng3),
-			(unsigned long long)(rng5-rng4), (unsigned long long)(rng6-rng5),
-			(unsigned long long)(rng7-rng6), (unsigned long long)(rng7-rng0));
-	}
 
 	inUpdateCall = false;
 }

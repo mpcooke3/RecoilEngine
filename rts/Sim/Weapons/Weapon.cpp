@@ -3,6 +3,8 @@
 #include "Weapon.h"
 #include "WeaponDefHandler.h"
 #include "WeaponMemPool.h"
+#include <cstdio>
+#include <cstring>
 #include "Game/GameHelper.h"
 #include "Game/TraceRay.h"
 #include "Game/Players/Player.h"
@@ -409,6 +411,26 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 
 	const float heading = GetHeadingFromVectorF(wantedDir.x, wantedDir.z);
 	const float pitch = math::asin(std::clamp(wantedDir.dot(owner->updir), -1.0f, 1.0f));
+
+	// DEBUG: log AimWeapon heading for desync debugging
+	if (owner && owner->id == 15846 && gs->frameNum >= 540 && gs->frameNum <= 543) {
+		static FILE* aimLog = fopen("/tmp/sync_aimweapon.txt", "w");
+		if (aimLog) {
+			float rawH = heading - owner->heading * TAANG2RAD;
+			float clampedH = ClampRadPi(rawH);
+			uint32_t rawBits, clampBits;
+			std::memcpy(&rawBits, &rawH, sizeof(rawBits));
+			std::memcpy(&clampBits, &clampedH, sizeof(clampBits));
+			fprintf(aimLog, "f=%d uid=%d wpn=%d heading=%.10g ownerH=%d rawH=%.10g (0x%08x) clampedH=%.10g (0x%08x) pitch=%.10g wDir=(%.10g,%.10g,%.10g)\n",
+				gs->frameNum, owner->id, weaponNum,
+				(double)heading, (int)owner->heading,
+				(double)rawH, rawBits,
+				(double)clampedH, clampBits,
+				(double)pitch,
+				(double)wantedDir.x, (double)wantedDir.y, (double)wantedDir.z);
+			fflush(aimLog);
+		}
+	}
 
 	// for COB, this sets <angleGood> to AimWeapon's return value when finished
 	// for LUS, there exists a callout to set the <angleGood> member directly

@@ -6,9 +6,12 @@
 #include "CobFileHandler.h"
 #include "CobInstance.h"
 #include "CobThread.h"
+#include <cstdio>
+#include <cstring>
 
 #include "Game/GameHelper.h"
 #include "Game/GlobalUnsynced.h"
+#include "Sim/Misc/GlobalSynced.h"
 #include "Map/Ground.h"
 #include "Sim/Misc/GroundBlockingObjectMap.h"
 #include "Sim/Misc/TeamHandler.h"
@@ -436,6 +439,23 @@ int CCobInstance::QueryWeapon(int weaponNum)
 void CCobInstance::AimWeapon(int weaponNum, float heading, float pitch)
 {
 	ZoneScoped;
+
+	// DEBUG: log COB AimWeapon heading→TAANG conversion for desync debugging
+	if (unit && unit->id == 15846 && gs->frameNum >= 540 && gs->frameNum <= 543) {
+		static FILE* cobAimLog = fopen("/tmp/sync_cob_aim.txt", "w");
+		if (cobAimLog) {
+			float hTaangF = heading * RAD2TAANG;
+			short hTaangS = short(hTaangF);
+			int hTaangI = (int)hTaangS; // what gets stored in callinArgs
+			uint32_t headingBits;
+			std::memcpy(&headingBits, &heading, sizeof(headingBits));
+			fprintf(cobAimLog, "f=%d uid=%d wpn=%d heading=%.10g (0x%08x) hTaangF=%.2f hTaangS=%d hTaangI=%d\n",
+				gs->frameNum, unit->id, weaponNum,
+				(double)heading, headingBits, (double)hTaangF, (int)hTaangS, hTaangI);
+			fflush(cobAimLog);
+		}
+	}
+
 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
 
 	callinArgs[0] = 2;

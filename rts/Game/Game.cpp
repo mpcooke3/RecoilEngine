@@ -1743,6 +1743,19 @@ void CGame::SimFrame() {
 	{
 		SCOPED_SPECIAL_TIMER("Sim");
 
+#ifdef SYNCCHECK
+		// Per-subsystem checksum logging for cross-arch desync debugging
+		// Log around the known desync frame to identify which subsystem diverges
+		auto logSubsystemChecksum = [](FILE* f, int frame, const char* name) {
+			if (f && frame >= 535 && frame <= 550) {
+				fprintf(f, "%d %s %08x\n", frame, name, CSyncChecker::GetChecksum());
+				fflush(f);
+			}
+		};
+		static FILE* subsysFile = fopen("/tmp/sync_subsystems.txt", "w");
+		logSubsystemChecksum(subsysFile, gs->frameNum, "FrameStart");
+#endif
+
 		// Lua unit scripts change piece positions and orientations in eventHandler.GameFrame(gs->frameNum);
 		// so we need to save the previous unit state before it happened
 		unitHandler.UpdatePreFrame();
@@ -1759,13 +1772,37 @@ void CGame::SimFrame() {
 			eventHandler.GameFrame(gs->frameNum);
 		}
 
+#ifdef SYNCCHECK
+		logSubsystemChecksum(subsysFile, gs->frameNum, "GameFrame");
+#endif
+
 		helper->Update();
 		readMap->Update();
 		smoothGround.UpdateSmoothMesh();
 		mapDamage->Update();
+
+#ifdef SYNCCHECK
+		logSubsystemChecksum(subsysFile, gs->frameNum, "Map");
+#endif
+
 		unitHandler.Update();
+
+#ifdef SYNCCHECK
+		logSubsystemChecksum(subsysFile, gs->frameNum, "UnitHandler");
+#endif
+
 		pathManager->Update();
+
+#ifdef SYNCCHECK
+		logSubsystemChecksum(subsysFile, gs->frameNum, "PathManager");
+#endif
+
 		projectileHandler.Update();
+
+#ifdef SYNCCHECK
+		logSubsystemChecksum(subsysFile, gs->frameNum, "Projectiles");
+#endif
+
 		featureHandler.Update();
 		{
 			/* The default GAME_SPEED is 30, which doesn't divide 1000 well,
@@ -1781,6 +1818,11 @@ void CGame::SimFrame() {
 
 			unitHandler.UpdatePostAnimation();
 		}
+
+#ifdef SYNCCHECK
+		logSubsystemChecksum(subsysFile, gs->frameNum, "Scripts");
+#endif
+
 		envResHandler.Update();
 		losHandler->Update();
 		// dead ghosts have to be updated in sim, after los,
@@ -1792,6 +1834,10 @@ void CGame::SimFrame() {
 		teamHandler.GameFrame(gs->frameNum);
 		playerHandler.GameFrame(gs->frameNum);
 		eventHandler.GameFramePost(gs->frameNum);
+
+#ifdef SYNCCHECK
+		logSubsystemChecksum(subsysFile, gs->frameNum, "FrameEnd");
+#endif
 	}
 
 	lastSimFrameTime = spring_gettime();

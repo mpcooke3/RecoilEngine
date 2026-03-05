@@ -16,7 +16,10 @@
 #include "System/SafeUtil.h"
 #include "System/Config/ConfigHandler.h"
 
+#include "Sim/Misc/GlobalSynced.h"
 #include "System/Misc/TracyDefs.h"
+
+#include <cstdio>
 
 CONFIG(bool, AnimationMT).deprecated(true);
 
@@ -143,10 +146,35 @@ void CUnitScriptEngine::Tick(int deltaTime)
 		ZoneScopedN("CUnitScriptEngine::Tick(ST)");
 
 		uint32_t cs = 0;
+
+		// DEBUG: per-unit animation checksum logging
+		static FILE* animDbgFile = fopen("/tmp/sync_anim_units.txt", "w");
+		const int curFrame = gs->frameNum;
+
 		for (size_t i = 0; i < animating.size(); /*NO-OP*/) {
 			currentScript = animating[i];
 			// deal with synced checksum here, before animating is possibly popped below
-			cs = spring::hash_combine(currentScript->GetAnimArrayChecksum(), cs);
+			const uint32_t unitChecksum = currentScript->GetAnimArrayChecksum();
+			cs = spring::hash_combine(unitChecksum, cs);
+
+			if (animDbgFile && curFrame >= 540 && curFrame <= 544) {
+				const int unitId = currentScript->GetUnit() ? currentScript->GetUnit()->id : -1;
+				const auto& unitAnims = currentScript->GetAnims();
+				fprintf(animDbgFile, "%d i=%zu uid=%d achk=%08x combined=%08x nAnims=%zu\n",
+					curFrame, i, unitId, unitChecksum, cs, unitAnims.size());
+				// dump individual AnimInfo fields for frame 542
+				if (curFrame == 542) {
+					for (size_t a = 0; a < unitAnims.size(); a++) {
+						const auto& ai = unitAnims[a];
+						uint32_t aiHash = spring::LiteHash(ai, 0u);
+						fprintf(animDbgFile, "  anim[%zu] type=%d axis=%d piece=%d speed=%.10g dest=%.10g accel=%.10g done=%d hw=%d hash=%08x\n",
+							a, ai.animType, ai.axis, ai.piece,
+							(double)ai.speed, (double)ai.dest, (double)ai.accel,
+							(int)ai.done, (int)ai.hasWaiting, aiHash);
+					}
+				}
+				fflush(animDbgFile);
+			}
 
 			if (!currentScript->TickAnimFinished()) {
 				animating[i] = animating.back();

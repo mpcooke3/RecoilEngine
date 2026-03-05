@@ -127,6 +127,7 @@ public:
 	const CUnit* GetUnit() const { return unit; }
 
 	auto GetAnimArrayChecksum() const { return checksum; }
+	const AnimContainerType& GetAnims() const { return anims; }
 	void TickAllAnims(int tickRate);
 	bool TickAnimFinished();
 	// note: must copy-and-set here (LMP dirty flag, etc)

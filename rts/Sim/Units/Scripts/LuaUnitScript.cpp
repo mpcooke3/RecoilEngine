@@ -25,7 +25,11 @@
 #include "System/StringUtil.h"
 #include "Rendering/Models/3DModelPiece.hpp"
 
+#include "Sim/Misc/GlobalSynced.h"
 #include "System/Misc/TracyDefs.h"
+
+#include <cstdio>
+#include <cstring>
 
 CR_BIND_DERIVED(CLuaUnitScript, CUnitScript, )
 
@@ -1711,8 +1715,32 @@ int CLuaUnitScript::GetPieceRotation(lua_State* L)
 	if (activeScript == nullptr)
 		return 0;
 
-	LocalModelPiece* piece = ParseLocalModelPiece(L, activeScript, __func__);
-	return ToLua(L, piece->GetRotation());
+	const int pieceNum = luaL_checkint(L, 1) - 1;
+	auto* p = activeScript->SafeGetPiece(pieceNum);
+	if (!p)
+		luaL_error(L, "%s(): Invalid piecenumber", __func__);
+
+	const float3 rot = p->GetRotation();
+
+	// DEBUG: log piece rotation reads for diverging units near frame 542
+	if (activeScript->GetUnit() && gs->frameNum >= 540 && gs->frameNum <= 543) {
+		const int uid = activeScript->GetUnit()->id;
+		if (uid == 15846 || uid == 12742) {
+			static FILE* rotLog = fopen("/tmp/sync_getrot.txt", "w");
+			if (rotLog) {
+				uint32_t xBits, yBits, zBits;
+				std::memcpy(&xBits, &rot.x, 4);
+				std::memcpy(&yBits, &rot.y, 4);
+				std::memcpy(&zBits, &rot.z, 4);
+				fprintf(rotLog, "f=%d uid=%d GetPieceRot(p=%d) x=%.10g(0x%08x) y=%.10g(0x%08x) z=%.10g(0x%08x)\n",
+					gs->frameNum, uid, pieceNum,
+					(double)rot.x, xBits, (double)rot.y, yBits, (double)rot.z, zBits);
+				fflush(rotLog);
+			}
+		}
+	}
+
+	return ToLua(L, rot);
 }
 
 int CLuaUnitScript::GetPieceScale(lua_State* L)

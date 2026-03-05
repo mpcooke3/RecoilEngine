@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <cstring>
 
 #include "Rendering/Models/LocalModelPiece.hpp"
 #include "System/creg/creg_cond.h"
@@ -44,6 +45,15 @@ protected:
 		float accel = 0.0f;    // used for spinning, can be negative
 		bool done = false;
 		bool hasWaiting = false;
+
+		// Zero-initialize including padding bytes to ensure LiteHash
+		// produces identical checksums across architectures
+		AnimInfo() {
+			std::memset(this, 0, sizeof(AnimInfo));
+			animType = ANone;
+			axis = -1;
+			piece = -1;
+		}
 	};
 
 	using AnimContainerType = std::vector<AnimInfo>;

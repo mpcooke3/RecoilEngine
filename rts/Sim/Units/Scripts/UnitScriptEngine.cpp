@@ -20,6 +20,7 @@
 #include "System/Misc/TracyDefs.h"
 
 #include <cstdio>
+#include <cstring>
 
 CONFIG(bool, AnimationMT).deprecated(true);
 
@@ -167,9 +168,12 @@ void CUnitScriptEngine::Tick(int deltaTime)
 					for (size_t a = 0; a < unitAnims.size(); a++) {
 						const auto& ai = unitAnims[a];
 						uint32_t aiHash = spring::LiteHash(ai, 0u);
-						fprintf(animDbgFile, "  anim[%zu] type=%d axis=%d piece=%d speed=%.10g dest=%.10g accel=%.10g done=%d hw=%d hash=%08x\n",
+						uint32_t destBits, speedBits;
+						std::memcpy(&destBits, &ai.dest, sizeof(destBits));
+						std::memcpy(&speedBits, &ai.speed, sizeof(speedBits));
+						fprintf(animDbgFile, "  anim[%zu] type=%d axis=%d piece=%d speed=%.10g(0x%08x) dest=%.10g(0x%08x) accel=%.10g done=%d hw=%d hash=%08x\n",
 							a, ai.animType, ai.axis, ai.piece,
-							(double)ai.speed, (double)ai.dest, (double)ai.accel,
+							(double)ai.speed, speedBits, (double)ai.dest, destBits, (double)ai.accel,
 							(int)ai.done, (int)ai.hasWaiting, aiHash);
 					}
 				}

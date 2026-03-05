@@ -3,6 +3,8 @@
 /* heavily based on CobInstance.cpp */
 #include "UnitScript.h"
 
+#include <cstdio>
+#include <cstring>
 #include "CobDefines.h"
 #include "CobFile.h"
 #include "CobInstance.h"
@@ -499,6 +501,21 @@ void CUnitScript::StopSpin(int piece, int axis, float decel)
 void CUnitScript::Turn(int piece, int axis, float speed, float destination)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+	// DEBUG: log Turn calls for the diverging unit at frame 542
+	if (unit && gs->frameNum >= 541 && gs->frameNum <= 543) {
+		static FILE* turnLog = fopen("/tmp/sync_turn_calls.txt", "w");
+		if (turnLog && piece == 18 && axis == 1) {
+			uint32_t destBits;
+			std::memcpy(&destBits, &destination, sizeof(destBits));
+			float clamped = ClampRad(destination);
+			uint32_t clampBits;
+			std::memcpy(&clampBits, &clamped, sizeof(clampBits));
+			fprintf(turnLog, "f=%d uid=%d Turn(p=%d,a=%d) dest=%.10g (0x%08x) clamped=%.10g (0x%08x) speed=%.10g\n",
+				gs->frameNum, unit->id, piece, axis,
+				(double)destination, destBits, (double)clamped, clampBits, (double)speed);
+			fflush(turnLog);
+		}
+	}
 	AddAnim(ATurn, piece, axis, math::fabs(speed), ClampRad(destination), 0);
 }
 

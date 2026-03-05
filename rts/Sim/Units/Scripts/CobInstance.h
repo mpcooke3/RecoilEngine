@@ -116,6 +116,15 @@ public:
 		// COBWTF
 		if (axis == 2)
 			destination = -destination;
+		// DEBUG: log COB Turn int destination for desync debugging
+		if (unit && piece == 18 && axis == 1 && unit->id == 15846 && gs->frameNum >= 540 && gs->frameNum <= 543) {
+			static FILE* cobTurnLog = fopen("/tmp/sync_cob_turn.txt", "w");
+			if (cobTurnLog) {
+				fprintf(cobTurnLog, "f=%d uid=%d COB::Turn p=%d a=%d dest_taang=%d speed_taang=%d dest_rad=%.10g\n",
+					gs->frameNum, unit->id, piece, axis, destination, speed, (double)(destination * TAANG2RAD));
+				fflush(cobTurnLog);
+			}
+		}
 		CUnitScript::Turn(piece, axis, speed * TAANG2RAD, destination * TAANG2RAD);
 	}
 	void TurnNow(int piece, int axis, int destination) {

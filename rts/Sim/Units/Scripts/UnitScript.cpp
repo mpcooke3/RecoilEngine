@@ -501,10 +501,10 @@ void CUnitScript::StopSpin(int piece, int axis, float decel)
 void CUnitScript::Turn(int piece, int axis, float speed, float destination)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
-	// DEBUG: log Turn calls for diverging units near frame 542
-	if (unit && gs->frameNum >= 540 && gs->frameNum <= 543) {
+	// DEBUG: log ALL Turn calls for piece=18 axis=1 on uid=15846, wider frame range
+	if (unit && unit->id == 15846 && piece == 18 && axis == 1 && gs->frameNum >= 535 && gs->frameNum <= 545) {
 		static FILE* turnLog = fopen("/tmp/sync_turn_calls.txt", "w");
-		if (turnLog && (unit->id == 15846 || unit->id == 12742)) {
+		if (turnLog) {
 			uint32_t destBits;
 			std::memcpy(&destBits, &destination, sizeof(destBits));
 			float clamped = ClampRad(destination);

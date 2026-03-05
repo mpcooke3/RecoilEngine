@@ -387,6 +387,22 @@ void CCobInstance::TransportDrop(const CUnit* unit, const float3& pos)
 void CCobInstance::StartBuilding(float heading, float pitch)
 {
 	ZoneScoped;
+
+	// DEBUG: log COB StartBuilding heading→TAANG conversion for desync debugging
+	if (unit && unit->id == 15846 && gs->frameNum >= 540 && gs->frameNum <= 543) {
+		static FILE* cobBuildLog = fopen("/tmp/sync_cob_build.txt", "w");
+		if (cobBuildLog) {
+			float hTaangF = heading * RAD2TAANG;
+			short hTaangS = short(hTaangF);
+			uint32_t headingBits;
+			std::memcpy(&headingBits, &heading, sizeof(headingBits));
+			fprintf(cobBuildLog, "f=%d uid=%d COB::StartBuilding heading=%.10g (0x%08x) hTaangF=%.2f hTaangS=%d\n",
+				gs->frameNum, unit->id,
+				(double)heading, headingBits, (double)hTaangF, (int)hTaangS);
+			fflush(cobBuildLog);
+		}
+	}
+
 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
 
 	callinArgs[0] = 2;

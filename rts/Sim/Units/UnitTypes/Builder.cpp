@@ -2,6 +2,8 @@
 
 #include <assert.h>
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include "Builder.h"
 #include "Building.h"
 #include "Game/GameHelper.h"
@@ -932,6 +934,23 @@ bool CBuilder::ScriptStartBuilding(float3 pos, bool silent)
 		// clamping p - pitch not needed, range of asin is -PI/2..PI/2,
 		// so max difference between two asin calls is PI.
 		// FIXME: convert CSolidObject::heading to radians too.
+		// DEBUG: log StartBuilding heading for desync debugging
+		if (id == 15846 && gs->frameNum >= 540 && gs->frameNum <= 543) {
+			static FILE* buildLog = fopen("/tmp/sync_startbuilding.txt", "w");
+			if (buildLog) {
+				float rawH = h - heading * TAANG2RAD;
+				float clampedH = ClampRadPi(rawH);
+				uint32_t rawBits, clampBits;
+				std::memcpy(&rawBits, &rawH, sizeof(rawBits));
+				std::memcpy(&clampBits, &clampedH, sizeof(clampBits));
+				fprintf(buildLog, "f=%d uid=%d StartBuilding h=%.10g ownerH=%d rawH=%.10g (0x%08x) clampedH=%.10g (0x%08x) pitch=%.10g pos=(%.4g,%.4g,%.4g)\n",
+					gs->frameNum, id, (double)h, (int)heading,
+					(double)rawH, rawBits, (double)clampedH, clampBits,
+					(double)(p - pitch),
+					(double)pos.x, (double)pos.y, (double)pos.z);
+				fflush(buildLog);
+			}
+		}
 		script->StartBuilding(ClampRadPi(h - heading * TAANG2RAD), p - pitch);
 	}
 

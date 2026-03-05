@@ -5,6 +5,8 @@
 
 #include "UnitScript.h"
 #include "Sim/Units/Unit.h"
+#include "Sim/Misc/GlobalSynced.h"
+#include <cstdio>
 
 
 #define PACKXZ(x,z) (((int)(x) << 16)+((int)(z) & 0xffff))

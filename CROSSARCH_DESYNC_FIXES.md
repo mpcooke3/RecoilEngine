@@ -21,7 +21,7 @@ Branch: `arm64-upstream-061919` (based on upstream tag `2025.06.19`)
 
 ### Engine
 
-- Version: `2025.06.19-7-g2f674c6` (7 commits on top of upstream `2025.06.19` tag)
+- Version: `2025.06.19-16-g535eb2e` (16 commits on top of upstream `2025.06.19` tag)
 - Build: `cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_STREFLOP=TRUE -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DNO_SOUND=ON -Wno-dev`
 - Flags verified: `-fno-fast-math`, `-ffp-contract=off`, `STREFLOP_ARM_NATIVE`, `SSE2NEON_PRECISE_*`
 
@@ -132,20 +132,15 @@ AnimInfo() {
 
 ---
 
-## Fix #2: ClampRadPi for Heading Angles (APPLIED — necessary but NOT sufficient)
+## Fix #2: ClampRadPi for Heading Angles (APPLIED — CONFIRMED EFFECTIVE)
 
 **Upstream commit**: `ad716fe785` ("Do proper modulo for heading (#2827)")
 **Cherry-picked as**: `ef8647af3f`
-**Impact**: Fixes UB in `short()` cast and is correct practice, but does NOT fix frame 542 desync
+**Impact**: Fixes the frame 542 desync. 8,705 frames verified identical across platforms.
 
 **THIS FIX WAS PRESENT IN PHASE 1 BUT WAS LOST DURING REBASE TO `2025.06.19`.**
 The upstream version (`ad716fe785`) was merged on 2026-03-02, AFTER the
 `2025.06.19` tag. It must be cherry-picked onto any branch based on that tag.
-
-**IMPORTANT**: Testing confirmed this fix alone does NOT resolve the frame 542
-desync. The raw `dest` values reaching `CUnitScript::Turn()` are unchanged —
-the ±2π difference originates inside the Lua game script's angle computation,
-not from the AimWeapon heading parameter. See Fix #5 investigation below.
 
 ### Root Cause
 
@@ -375,9 +370,10 @@ diff /tmp/arm64_checksums.txt /tmp/x86_checksums.txt | head -5
 | 2026-03-05 | + subsystem logging | Frame 542 | **Scripts** subsystem diverges (not UnitHandler/Path/Projectiles) |
 | 2026-03-05 | + per-unit anim logging | Frame 542 | uid=15846 anim[32] (ATurn p=18 a=1) `dest` differs |
 | 2026-03-05 | + Turn() call logging | Frame 542 | **ROOT CAUSE IDENTIFIED**: Lua script produces dest ±2π, ClampRad rounds differently |
-| 2026-03-05 | + ClampRadPi cherry-pick (ad716fe785) | Frame 542 | **NO EFFECT** — raw Turn() dest values unchanged; ±2π originates inside Lua script, not from AimWeapon heading |
+| 2026-03-05 | + ClampRadPi cherry-pick (ad716fe785) | Frame 542 | First test showed NO EFFECT (old binary on one machine — see lesson learned below) |
 | 2026-03-05 | TAANG reverse-engineering | Frame 542 | dest values = exact TAANG×TAANG2RAD multiples → **COB script**, TAANG ints differ (57487 vs -8049 = same angle ± 65536) |
-| 2026-03-05 | AimWeapon heading logging | *pending* | Log at Weapon.cpp + CCobInstance::AimWeapon to trace where ±2π enters |
+| 2026-03-05 | Comprehensive Turn path logging | — | Added logging at all COB/Builder/AimWeapon Turn entry points |
+| 2026-03-06 | ClampRadPi CONFIRMED EFFECTIVE | **8,705+ frames MATCH** | Desync at frame 542 FIXED. Turn came via StartBuilding (not AimWeapon). Both platforms: dest_taang=-8048, dest_rad=-0.7715923786 (0xbf458714), clamped=5.511592865 (0x40b05ef8) — bit-for-bit identical. x86_64 replay ended early (frame 8705) due to unrelated LuaRAM/atlas rendering issue. |
 
 ---
 
@@ -443,113 +439,43 @@ script computation, not from the AimWeapon heading. See Fix #5 investigation.
 
 ---
 
-## Fix #5: ClampRad in CUnitScript::Turn() (INVESTIGATING)
+## Resolved Investigation: Frame 542 Desync Root Cause
 
-**File**: `rts/Sim/Units/Scripts/UnitScript.cpp:519`
-**Impact**: Actual root cause of frame 542 desync (Fix #2 is necessary but insufficient)
+The earlier "Fix #5" investigation was based on a **false negative** — the first
+ClampRadPi test appeared to have no effect because the old binary was still running
+on x86_64 (the pre-test checklist was not followed rigorously). Once both machines
+were verified running the same commit (`535eb2ea75`) with comprehensive logging,
+the results confirmed ClampRadPi (Fix #2) fully resolves the issue.
 
-### Root Cause
+### What the comprehensive logging revealed
 
-The Lua game script (BAR corcom AimWeapon handler) computes a Turn destination
-angle for the nanolathe that lands on opposite sides of the 0/2π boundary on
-ARM64 vs x86_64 — differing by exactly 2π. `CUnitScript::Turn()` calls
-`ClampRad(destination)` which normalizes to [0, 2π), but:
+The Turn at frame 542 for uid=15846 came through **StartBuilding** (not AimWeapon):
+- `sync_aimweapon.txt` — NOT CREATED on either platform (AimWeapon not called at f=542)
+- `sync_startbuilding.txt` — present on both, values bit-for-bit identical
 
 ```
-ClampRad(5.511497021)   = 5.511497021 (no-op, already in range)
-ClampRad(-0.7716882229) = 5.511497498 (= -0.7716882229 + 2π, differs by 1 ULP)
+# Both ARM64 and x86_64 (identical):
+COB::Turn p=18 a=1 dest_taang=-8048 speed_taang=54600 dest_rad=-0.7715923786
+Turn(p=18,a=1) dest=-0.7715923786 (0xbf458714) clamped=5.511592865 (0x40b05ef8)
+StartBuilding heading=-0.4226865768 (0xbed86a60) hTaangF=-4408.78 hTaangS=-4408
 ```
 
-This is because `x ≠ (x - 2π) + 2π` in float arithmetic.
+### Key observations
 
-### Why ClampRadPi (Fix #2) didn't help
+1. The Turn came via `CBuilder::ScriptStartBuilding` → `CCobInstance::StartBuilding`,
+   NOT via AimWeapon. This is why AimWeapon logging was empty.
+2. With ClampRadPi applied at `Builder.cpp` (`ClampRadPi(h - heading * TAANG2RAD)`),
+   the heading is properly normalized to [-π, π) before TAANG conversion.
+3. The `short()` cast is safe: heading ∈ [-π, π) → TAANG ∈ [-32768, 32768).
+4. Both platforms produce identical TAANG integers (-8048), identical float
+   destinations (-0.7715923786, hex 0xbf458714), and identical clamped values
+   (5.511592865, hex 0x40b05ef8).
 
-Turn call logs with ClampRadPi applied — dest values UNCHANGED from pre-fix:
-```
-ARM64:  f=542 uid=15846 p=18,a=1 dest= 5.511497021 (0x40b05e2f) → clamped=5.511497021 (0x40b05e2f)
-x86_64: f=542 uid=15846 p=18,a=1 dest=-0.7716882229 (0xbf458d5c) → clamped=5.511497498 (0x40b05e30)
-```
+### Lesson learned
 
-### TAANG reverse-engineering (key finding)
-
-The dest values correspond exactly to TAANG integer multiples:
-```
-ARM64:  5.511497021  = 57487 * TAANG2RAD   (TAANG2RAD = π/32768)
-x86_64: -0.7716882229 = -8049 * TAANG2RAD
-```
-
-57487 - 65536 = -8049 → same angle, different TAANG integers.
-
-This means corcom uses a **COB script** (not LUS). The data flow is:
-1. `Weapon.cpp:416` — `ClampRadPi(heading - owner->heading * TAANG2RAD)` → float in [-π, π)
-2. `CCobInstance::AimWeapon` — `callinArgs[1] = short(heading * RAD2TAANG)` → TAANG int
-3. COB VM — `turn aimy1 to y-axis heading speed <300.0>` (BOS script passes heading directly)
-4. `CCobInstance::Turn` — `CUnitScript::Turn(piece, axis, speed * TAANG2RAD, destination * TAANG2RAD)`
-5. `CUnitScript::Turn` — `ClampRad(destination)` → stored in AnimInfo.dest
-
-The TAANG values 57487 and -8049 prove the heading passed to step 2 is
-DIFFERENT on the two platforms:
-- ARM64: heading ≈ 5.5115 rad (in [0, 2π), NOT [-π, π)!) → TAANG = 57487
-- x86_64: heading ≈ -0.7717 rad (in [-π, π)) → TAANG = -8049
-
-If ClampRadPi were truly applied, heading would be in [-π, π) on both platforms,
-heading * RAD2TAANG would be in [-32768, 32768), and `short()` would be well-defined
-and identical. The fact that ARM64 has TAANG=57487 (> 32768) means either:
-
-**Hypothesis A**: ClampRadPi is NOT being reached for this unit's AimWeapon call
-(different code path, or the AimWeapon isn't called at frame 542 — a cached heading
-from before the fix is being reused by the COB script).
-
-**Hypothesis B**: The heading value at `Weapon.cpp:410` (`GetHeadingFromVectorF`)
-differs between platforms, producing 5.5115 on ARM64 and -0.7717 on x86 even
-BEFORE the ClampRadPi is applied. This would mean `ClampRadPi(5.5115) = -0.7717`
-on ARM64, but the COB receives 57487 TAANG, which contradicts ClampRadPi working.
-
-**Hypothesis C**: The COB AimWeapon call at frame 542 for this unit is actually
-using a heading from a PREVIOUS frame (COB threads are asynchronous — a thread
-from a prior AimWeapon call may still be running). The heading from that prior
-call was computed WITHOUT ClampRadPi (because it was an earlier build, or because
-the COB thread was queued before the current frame).
-
-### Test: AimWeapon heading logging (pending)
-
-To determine which hypothesis is correct, add logging at TWO points:
-
-1. **`Weapon.cpp:416`** — log `heading`, `owner->heading`, raw subtraction,
-   and ClampRadPi result for uid=15846, frames 540-543
-   → Output: `/tmp/sync_aimweapon.txt`
-
-2. **`CCobInstance::AimWeapon`** — log the heading float, TAANG float,
-   and short TAANG value for uid=15846, frames 540-543
-   → Output: `/tmp/sync_cob_aim.txt`
-
-Expected outcomes:
-- If `sync_aimweapon.txt` shows different raw heading values → synced state
-  diverged before this point (deeper issue)
-- If `sync_aimweapon.txt` shows same ClampRadPi'd heading on both but
-  `sync_cob_aim.txt` shows different TAANG → ClampRadPi implementation bug
-- If `sync_aimweapon.txt` is EMPTY on frame 542 → the AimWeapon isn't called
-  at frame 542 (COB thread reuse), and the heading comes from a prior frame
-- If `sync_cob_aim.txt` shows heading > π → ClampRadPi is not being applied
-  (code path issue)
-
-### Constraint
-
-Cannot simply change `ClampRad` → `ClampRadPi` in Turn() because
-`TurnToward()` (line 139) asserts `dest < math::TWOPI` and `cur < math::TWOPI`.
-The animation system expects angles in [0, 2π).
-
-### Possible Fixes (once root cause confirmed)
-
-1. **Normalize at Turn() entry**: Apply ClampRadPi first, then shift to [0, 2π):
-   ```cpp
-   destination = ClampRadPi(destination);  // [-π, π) — bit-exact for ±2π
-   if (destination < 0.0f)
-       destination += math::TWOPI;         // shift to [0, 2π)
-   ```
-   This avoids the `floor(x/2π)*2π` subtraction that causes rounding error.
-
-2. **Trace the exact divergence source** and fix upstream of Turn()
+The first test appeared to show "no effect" because the Pre-Test Checklist was
+not followed — the x86_64 machine was running an old binary. The checklist
+(verify same commit, rebuild, copy binary) is essential for every test run
 
 ---
 

@@ -21,7 +21,7 @@ Branch: `arm64-upstream-061919` (based on upstream tag `2025.06.19`)
 
 ### Engine
 
-- Version: `2025.06.19-16-g535eb2e` (16 commits on top of upstream `2025.06.19` tag)
+- Version: `2025.06.19-19-gdafd37c` (19 commits on top of upstream `2025.06.19` tag)
 - Build: `cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_STREFLOP=TRUE -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DNO_SOUND=ON -Wno-dev`
 - Flags verified: `-fno-fast-math`, `-ffp-contract=off`, `STREFLOP_ARM_NATIVE`, `SSE2NEON_PRECISE_*`
 
@@ -60,10 +60,31 @@ Per-frame checksums are written to `/tmp/sync_checksums.txt` by the engine
 
 Compare with `diff` after both machines complete a replay.
 
-### Test Script
+### Test Scripts
 
-`run_sync_tests.sh` in the repo root orchestrates parallel replay runs on both
-machines, copies demos via SCP, collects checksums, and generates a report.
+**`run_replay_batch.sh`** — Standalone batch runner (preferred for overnight runs).
+Runs all replays in a directory independently on a single machine. Start on both
+machines separately; compare results afterwards. Survives SSH disconnections and
+laptop sleep since each machine runs autonomously.
+
+```bash
+# On ARM64 Mac:
+nohup ./run_replay_batch.sh ./build-desync-test/spring-headless \
+  /tmp/desync-test /tmp/desync-test/demos-batch3 > /tmp/desync-test/batch_run.log 2>&1 &
+
+# On x86_64 Linux (via SSH, then disconnect freely):
+nohup /tmp/desync-test/run_replay_batch.sh \
+  /home/matt/RecoilEngine/build-headless/spring-headless \
+  /tmp/desync-test /tmp/desync-test/demos-batch3 > /tmp/desync-test/batch_run.log 2>&1 &
+```
+
+Results are saved as `<results-dir>/<replay-name>.checksums` (one per replay).
+Compare after both machines finish by SCPing x86_64 results to the Mac.
+
+**`run_sync_tests.sh`** — Orchestrated runner (requires Mac to stay awake).
+Manages both machines over SSH, copies demos via SCP, and generates a comparison
+report automatically. Simpler but fragile — SSH drops if the Mac sleeps or
+Tailscale auth expires.
 
 ---
 
@@ -78,6 +99,8 @@ machines, copies demos via SCP, collects checksums, and generates a report.
 | `679bafcc59` | Math determinism: portable floor, SSE2NEON precision flags |
 | `f9166a3445` | Per-frame sync checksum file output for cross-arch testing |
 | `2f674c6b3f` | **FIX #1**: Zero-initialize AnimInfo struct padding |
+| `ef8647af3f` | **FIX #2**: ClampRadPi cherry-pick (upstream `ad716fe785`, PR #2827) |
+| `dafd37c501` | **FIX #5**: Fix headless atlas rendering infinite loop |
 
 ---
 
@@ -229,6 +252,55 @@ The ARM64 path handles edge cases (overflow, NaN) via streflop's portable libm.
 
 ---
 
+## Fix #5: Headless Atlas Rendering Infinite Loop (APPLIED)
+
+**Commit**: `dafd37c501`
+**File**: `rts/Rendering/IconHandler.cpp`
+**Impact**: Fixes headless replays dying early from LuaRAM exhaustion
+
+### Root Cause
+
+In headless mode, `CIconHandler::Update()` attempts to render icon atlas textures
+every frame. `CTextureRenderAtlas::CreateAtlasTexture()` requires FBO/GL operations
+which are stubs in headless builds — FBO creation succeeds (`FBO::IsReady()` returns
+true because `globalRendering->active` is true) but the FBO is never valid, so
+`atlasRendered` stays false. The `atlasNeedsUpdate` flag is never cleared, causing
+the atlas creation to retry every frame indefinitely.
+
+This produces ~300,000 log lines of atlas spam per replay, consumes CPU, and
+eventually triggers "Emergency garbage collection due to exceeding 1.2GB LuaRAM"
+which kills the process — typically after only a few thousand frames instead of
+the full 30,000+.
+
+### Fix
+
+Skip `CIconHandler::Update()` atlas processing entirely in headless builds:
+
+```cpp
+void CIconHandler::Update()
+{
+    if (atlasNeedsUpdate.none())
+        return;
+
+#ifdef HEADLESS
+    atlasNeedsUpdate.reset();
+    return;
+#endif
+    // ... normal atlas rendering code
+}
+```
+
+An earlier attempt set `atlasRendered = true` in `CreateAtlasTexture()`, but this
+caused a segfault when `DisownTexture()` dereferenced the never-created atlas
+texture pointer.
+
+### Verification
+
+- Before fix: replays die at ~8,000 frames with LuaRAM crash, infolog ~300K lines
+- After fix: replays run to completion (~30,000-60,000 frames), infolog ~3K lines
+
+---
+
 ## Other Potential Issues (Lower Priority)
 
 ### Integer Division in tickRate
@@ -352,10 +424,31 @@ cp /tmp/sync_checksums.txt /tmp/x86_checksums.txt
 diff /tmp/arm64_checksums.txt /tmp/x86_checksums.txt | head -5
 ```
 
-### 5. Run Full Test Suite
+### 5. Run Full Test Suite (Independent Batch Mode)
 
 ```bash
-./run_sync_tests.sh --demos /tmp/desync-test/demos-batch3 2>&1 | tee test_run.log
+# 1. Copy demos and batch script to x86_64:
+scp demos-batch3/*.sdfz matt@ethanbaby:/tmp/desync-test/demos-batch3/
+scp run_replay_batch.sh matt@ethanbaby:/tmp/desync-test/
+
+# 2. Start x86_64 (survives SSH disconnect):
+ssh matt@ethanbaby "nohup /tmp/desync-test/run_replay_batch.sh \
+  /home/matt/RecoilEngine/build-headless/spring-headless \
+  /tmp/desync-test /tmp/desync-test/demos-batch3 \
+  > /tmp/desync-test/batch_run.log 2>&1 &"
+
+# 3. Start ARM64 locally:
+nohup ./run_replay_batch.sh ./build-desync-test/spring-headless \
+  /tmp/desync-test /tmp/desync-test/demos-batch3 \
+  > /tmp/desync-test/batch_run.log 2>&1 &
+
+# 4. Monitor progress:
+tail -5 /tmp/desync-test/batch_run.log                          # ARM64
+ssh matt@ethanbaby "tail -5 /tmp/desync-test/batch_run.log"     # x86_64
+
+# 5. After both finish, compare results:
+scp -r matt@ethanbaby:/tmp/desync-test/results/<timestamp>/ /tmp/x86_results/
+# Then compare matching .checksums files (see comparison script below)
 ```
 
 ---
@@ -374,6 +467,8 @@ diff /tmp/arm64_checksums.txt /tmp/x86_checksums.txt | head -5
 | 2026-03-05 | TAANG reverse-engineering | Frame 542 | dest values = exact TAANG×TAANG2RAD multiples → **COB script**, TAANG ints differ (57487 vs -8049 = same angle ± 65536) |
 | 2026-03-05 | Comprehensive Turn path logging | — | Added logging at all COB/Builder/AimWeapon Turn entry points |
 | 2026-03-06 | ClampRadPi CONFIRMED EFFECTIVE | **8,705+ frames MATCH** | Desync at frame 542 FIXED. Turn came via StartBuilding (not AimWeapon). Both platforms: dest_taang=-8048, dest_rad=-0.7715923786 (0xbf458714), clamped=5.511592865 (0x40b05ef8) — bit-for-bit identical. x86_64 replay ended early (frame 8705) due to unrelated LuaRAM/atlas rendering issue. |
+| 2026-03-06 | + Headless atlas fix | **40,591 frames MATCH** | Full replay "All That Simmers" — all frames identical. Atlas fix allows replays to run to completion. |
+| 2026-03-06 | 70-replay batch run | **IN PROGRESS** | Both machines running independently (`run_replay_batch.sh`). Commit `dafd37c501`. ARM64 results: `/private/tmp/desync-test/results/20260306_214824/`. x86_64 results: `/tmp/desync-test/results/20260306_214713/`. |
 
 ---
 

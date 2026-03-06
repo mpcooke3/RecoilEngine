@@ -350,12 +350,6 @@ bool CTextureRenderAtlas::CreateAtlasTexture()
 	if (atlasRendered)
 		return true;
 
-#ifdef HEADLESS
-	// In headless mode, FBO/GL operations are stubs and will never succeed,
-	// causing an infinite retry loop. Skip atlas rendering entirely.
-	atlasRendered = true;
-	return true;
-#endif
 
 	LOG_L(L_INFO, "CTextureRenderAtlas::%s()[0] atlas=%s FBO::ready=%d", __func__, atlasName.c_str(), FBO::IsReady());
 

@@ -151,7 +151,13 @@ inline float ClampRad(float f)
 	f  = math::fmod(f, math::TWOPI);
 	f += (math::TWOPI * (f < 0.0f));
 	*/
-	f = f - math::TWOPI * math::floor(f / math::TWOPI);
+	// Use explicit int-truncation floor on all platforms for cross-arch determinism.
+	// math::floor differs between x86_64 (fastmath int-truncation) and ARM64 (streflop libm).
+	// The int-truncation trick is safe here because f/TWOPI is bounded for heading values.
+	const float t = f / math::TWOPI;
+	const float truncT = static_cast<float>(static_cast<int>(t));
+	const float floorT = truncT - static_cast<float>(truncT > t);
+	f = f - math::TWOPI * floorT;
 
 	// there should be no negative zeros (-0.0f) or negatives in general
 	assert(!std::signbit(f));

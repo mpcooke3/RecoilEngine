@@ -29,7 +29,7 @@ void CLaserCannon::UpdateProjectileSpeed(const float val)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
 	projectileSpeed = std::max(0.001f, val); // sanitize
-	range = std::max(1.0f, math::floor(val / projectileSpeed)) * projectileSpeed;
+	range = std::max(1.0f, std::floor(val / projectileSpeed)) * projectileSpeed;
 }
 void CLaserCannon::UpdateRange(const float val)
 {
@@ -39,7 +39,7 @@ void CLaserCannon::UpdateRange(const float val)
 	// (val / speed) is the total number of frames the projectile
 	// is allowed to do damage to objects, ttl decreases from N-1
 	// to 0 and collisions are checked at 0 inclusive
-	range = std::max(1.0f, math::floor(val / projectileSpeed)) * projectileSpeed;
+	range = std::max(1.0f, std::floor(val / projectileSpeed)) * projectileSpeed;
 }
 
 
@@ -49,8 +49,8 @@ void CLaserCannon::FireImpl(const bool scriptCall)
 	float3 dir = currentTargetPos - weaponMuzzlePos;
 
 	const float dist = dir.LengthNormalize();
-	const int ttlreq = math::ceil(dist / projectileSpeed);
-	const int ttlmax = math::floor(range / projectileSpeed) - 1;
+	const int ttlreq = std::ceil(dist / projectileSpeed);
+	const int ttlmax = std::floor(range / projectileSpeed) - 1;
 
 	// [?] StrafeAirMovetype cannot align itself properly, change back when that is fixed
 	if (onlyForward && owner->unitDef->IsStrafingAirUnit())

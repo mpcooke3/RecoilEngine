@@ -202,7 +202,7 @@ void CUnitScript::TickAllAnims(int deltaTime)
 	ZoneScoped;
 
 	// optimize the memory access patterns of the procedure below
-	std::stable_sort(anims.begin(), anims.end(), [](const auto& lhs, const auto& rhs) {
+	std::sort(anims.begin(), anims.end(), [](const auto& lhs, const auto& rhs) {
 		return std::tie(lhs.piece, lhs.animType, lhs.axis) < std::tie(rhs.piece, rhs.animType, rhs.axis);
 	});
 

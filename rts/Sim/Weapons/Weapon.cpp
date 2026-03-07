@@ -417,7 +417,7 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 		static FILE* aimLog = fopen("/tmp/sync_aimweapon.txt", "w");
 		if (aimLog) {
 			float rawH = heading - owner->heading * TAANG2RAD;
-			float clampedH = ClampRadPi(rawH);
+			float clampedH = ClampRad(rawH);
 			uint32_t rawBits, clampBits;
 			std::memcpy(&rawBits, &rawH, sizeof(rawBits));
 			std::memcpy(&clampBits, &clampedH, sizeof(clampBits));
@@ -435,7 +435,7 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	// for COB, this sets <angleGood> to AimWeapon's return value when finished
 	// for LUS, there exists a callout to set the <angleGood> member directly
 	// FIXME: convert CSolidObject::heading to radians too.
-	owner->script->AimWeapon(weaponNum, ClampRadPi(heading - owner->heading * TAANG2RAD), pitch);
+	owner->script->AimWeapon(weaponNum, ClampRad(heading - owner->heading * TAANG2RAD), pitch);
 	return true;
 }
 

@@ -951,7 +951,7 @@ bool CBuilder::ScriptStartBuilding(float3 pos, bool silent)
 				fflush(buildLog);
 			}
 		}
-		script->StartBuilding(ClampRadPi(h - heading * TAANG2RAD), p - pitch);
+		script->StartBuilding(ClampRad(h - heading * TAANG2RAD), p - pitch);
 	}
 
 	if ((!silent || inBuildStance) && IsInLosForAllyTeam(gu->myAllyTeam))

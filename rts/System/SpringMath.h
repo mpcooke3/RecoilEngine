@@ -208,6 +208,12 @@ int2 IdxToCoord(unsigned x, unsigned array_width) _const _warn_unused_result;
  */
 float ClampRad(float f) _const _warn_unused_result;
 
+/**
+ * @brief Clamps a radian angle between -pi .. pi
+ * @param f float value to clamp
+ */
+float ClampRadPi(float f) _const _warn_unused_result;
+
 
 /**
  * @brief Clamps an radian angle between 0 .. 2*pi

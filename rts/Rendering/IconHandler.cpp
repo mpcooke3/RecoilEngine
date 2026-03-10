@@ -244,6 +244,14 @@ void CIconHandler::Update()
 	if (atlasNeedsUpdate.none())
 		return;
 
+#ifdef HEADLESS
+	// In headless mode, FBO/GL operations are stubs that never succeed,
+	// causing CreateAtlasTexture to retry every frame indefinitely.
+	// Clear all update flags since there's no rendering to do.
+	atlasNeedsUpdate.reset();
+	return;
+#endif
+
 	auto defIt = iconsMap.find("default");
 	if (defIt == iconsMap.end()) {
 		defIt = iconsMap.emplace("default", iconsData.size()).first;

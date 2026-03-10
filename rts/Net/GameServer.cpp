@@ -70,6 +70,8 @@ CONFIG(int, AutohostPort).defaultValue(0).description("Which port should the eng
 CONFIG(int, ServerSleepTime).defaultValue(5).description("Number of milliseconds to sleep per tick for the server thread. Lower values have marginally higher CPU load, while high values can introduce additional latency.");
 CONFIG(int, SpeedControl).defaultValue(1).minimumValue(1).maximumValue(2)
 	.description("Sets how server adjusts speed according to player's load (CPU), 1: use average, 2: use highest");
+CONFIG(float, DemoSpeedFactor).defaultValue(0.0f).minimumValue(0.0f).maximumValue(100.0f)
+	.description("Speed multiplier for demo playback (0 = use default 1x).");
 CONFIG(bool, AllowSpectatorJoin).defaultValue(true).dedicatedValue(false).description("allow any unauthenticated clients to join as spectator with any name, name will be prefixed with ~");
 CONFIG(bool, WhiteListAdditionalPlayers).defaultValue(true);
 CONFIG(bool, ServerRecordDemos).defaultValue(false).dedicatedValue(true);
@@ -185,6 +187,13 @@ void CGameServer::Initialize()
 	if (myGameSetup->hostDemo) {
 		Message(spring::format(PlayingDemo, myGameSetup->demoName.c_str()));
 		demoReader.reset(new CDemoReader(myGameSetup->demoName, modGameTime + 0.1f));
+
+		const float demoSpeed = configHandler->GetFloat("DemoSpeedFactor");
+		if (demoSpeed > 0.0f) {
+			userSpeedFactor = std::min(demoSpeed, maxUserSpeed);
+			internalSpeed = userSpeedFactor;
+			Message(spring::format("Demo speed factor: %.1fx", userSpeedFactor));
+		}
 	}
 
 	// initialize players, teams & ais
@@ -926,7 +935,7 @@ void CGameServer::LagProtection()
 	}
 
 	// adjust game speed
-	if (refCpuUsage > 0.0f && !isPaused) {
+	if (refCpuUsage > 0.0f && !isPaused && !(demoReader != nullptr && configHandler->GetFloat("DemoSpeedFactor") > 0.0f)) {
 		//userSpeedFactor holds the wanted speed adjusted manually by user ( normally 1)
 		//internalSpeed holds the current speed the sim is running
 		//refCpuUsage holds the highest cpu if curSpeedCtrl == 0 or median if curSpeedCtrl == 1

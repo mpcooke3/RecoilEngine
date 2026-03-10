@@ -1,0 +1,39 @@
+From 03c14f083e23bf4b7b4d5f56476cbce1b3120af9 Mon Sep 17 00:00:00 2001
+From: matt <matt@gridfire.com>
+Date: Sat, 7 Mar 2026 12:43:38 +0000
+Subject: [PATCH] Make ClampRad use explicit int-truncation floor on all
+ platforms
+
+math::floor dispatches to different implementations: fastmath int-truncation
+on x86_64 vs streflop libm on ARM64. This can produce 1-ULP differences in
+ClampRad output for heading values near the 0/2pi boundary, causing cross-arch
+desync. Inline the int-truncation floor directly in ClampRad so both platforms
+execute identical code, matching stock x86_64 behavior.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+---
+ rts/System/SpringMath.inl | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/rts/System/SpringMath.inl b/rts/System/SpringMath.inl
+index 45695880c1..412d8da695 100644
+--- a/rts/System/SpringMath.inl
++++ b/rts/System/SpringMath.inl
+@@ -151,7 +151,13 @@ inline float ClampRad(float f)
+ 	f  = math::fmod(f, math::TWOPI);
+ 	f += (math::TWOPI * (f < 0.0f));
+ 	*/
+-	f = f - math::TWOPI * math::floor(f / math::TWOPI);
++	// Use explicit int-truncation floor on all platforms for cross-arch determinism.
++	// math::floor differs between x86_64 (fastmath int-truncation) and ARM64 (streflop libm).
++	// The int-truncation trick is safe here because f/TWOPI is bounded for heading values.
++	const float t = f / math::TWOPI;
++	const float truncT = static_cast<float>(static_cast<int>(t));
++	const float floorT = truncT - static_cast<float>(truncT > t);
++	f = f - math::TWOPI * floorT;
+ 
+ 	// there should be no negative zeros (-0.0f) or negatives in general
+ 	assert(!std::signbit(f));
+-- 
+2.53.0
+

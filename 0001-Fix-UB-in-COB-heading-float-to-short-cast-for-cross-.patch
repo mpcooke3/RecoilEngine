@@ -1,0 +1,64 @@
+From 5efa77b11d7049b17ac0fc6d682c5fb0930284b8 Mon Sep 17 00:00:00 2001
+From: matt <matt@gridfire.com>
+Date: Sat, 7 Mar 2026 13:18:52 +0000
+Subject: [PATCH] Fix UB in COB heading float-to-short cast for cross-arch
+ determinism
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+short(heading * RAD2TAANG) is undefined behavior when heading > pi
+because the result exceeds short range [−32768, 32767]. ClampRad returns
+[0, 2pi) so half the range overflows. ARM64 and x86_64 handle this UB
+differently, producing different TAANG integers for the same heading.
+
+Fix by going through int first: static_cast<short>(static_cast<int>(...)).
+float→int is safe (values fit in int), int→short is defined 2's complement
+narrowing. This matches x86_64 stock behavior where the compiler happens
+to use CVTTSS2SI (float→int32) then truncate to 16 bits.
+
+Affected call sites: SetDirection, StartBuilding, AimWeapon.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+---
+ rts/Sim/Units/Scripts/CobInstance.cpp | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/rts/Sim/Units/Scripts/CobInstance.cpp b/rts/Sim/Units/Scripts/CobInstance.cpp
+index 7ccc5c7f77..b2873184d4 100644
+--- a/rts/Sim/Units/Scripts/CobInstance.cpp
++++ b/rts/Sim/Units/Scripts/CobInstance.cpp
+@@ -240,7 +240,7 @@ void CCobInstance::WindChanged(float heading, float speed)
+ {
+ 	ZoneScoped;
+ 	Call(COBFN_SetSpeed, int(speed * 3000.0f));
+-	Call(COBFN_SetDirection, short(heading * RAD2TAANG));
++	Call(COBFN_SetDirection, static_cast<short>(static_cast<int>(heading * RAD2TAANG)));
+ }
+ 
+ 
+@@ -406,8 +406,8 @@ void CCobInstance::StartBuilding(float heading, float pitch)
+ 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
+ 
+ 	callinArgs[0] = 2;
+-	callinArgs[1] = short(heading * RAD2TAANG);
+-	callinArgs[2] = short(  pitch * RAD2TAANG);
++	callinArgs[1] = static_cast<short>(static_cast<int>(heading * RAD2TAANG));
++	callinArgs[2] = static_cast<short>(static_cast<int>(  pitch * RAD2TAANG));
+ 
+ 	Call(COBFN_StartBuilding, callinArgs);
+ }
+@@ -475,8 +475,8 @@ void CCobInstance::AimWeapon(int weaponNum, float heading, float pitch)
+ 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
+ 
+ 	callinArgs[0] = 2;
+-	callinArgs[1] = short(heading * RAD2TAANG);
+-	callinArgs[2] = short(  pitch * RAD2TAANG);
++	callinArgs[1] = static_cast<short>(static_cast<int>(heading * RAD2TAANG));
++	callinArgs[2] = static_cast<short>(static_cast<int>(  pitch * RAD2TAANG));
+ 
+ 	Call(COBFN_AimPrimary + COBFN_Weapon_Funcs * weaponNum, callinArgs, CBAimWeapon, weaponNum, nullptr);
+ }
+-- 
+2.53.0
+

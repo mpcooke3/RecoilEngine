@@ -675,8 +675,7 @@ void CGame::ClientReadNet()
 						return fopen(path ? path : "/tmp/sync_checksums.txt", "w");
 					}();
 					if (syncFile) {
-						fprintf(syncFile, "%d FrameEnd %08x
-", gs->frameNum, CSyncChecker::GetChecksum());
+						fprintf(syncFile, "%d FrameEnd %08x\n", gs->frameNum, CSyncChecker::GetChecksum());
 						if ((gs->frameNum & 255) == 0)
 							fflush(syncFile);
 					}

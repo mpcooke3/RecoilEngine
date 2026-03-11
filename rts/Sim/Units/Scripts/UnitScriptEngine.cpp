@@ -18,6 +18,12 @@
 
 #include "System/Misc/TracyDefs.h"
 
+#ifdef SYNCCHECK
+#include "System/Sync/SyncChecker.h"
+#include <cstdio>
+#include <cstring>
+#endif
+
 CONFIG(bool, AnimationMT).deprecated(true);
 
 static CCobEngine gCobEngine;
@@ -143,10 +149,28 @@ void CUnitScriptEngine::Tick(int deltaTime)
 		ZoneScopedN("CUnitScriptEngine::Tick(ST)");
 
 		uint32_t cs = 0;
+#ifdef SYNCCHECK
+		const bool doAnimTrace = CSyncChecker::IsTracing();
+		FILE* tfAnim = doAnimTrace ? CSyncChecker::GetTraceFile() : nullptr;
+#endif
 		for (size_t i = 0; i < animating.size(); /*NO-OP*/) {
 			currentScript = animating[i];
 			// deal with synced checksum here, before animating is possibly popped below
+#ifdef SYNCCHECK
+			uint32_t prevCs = cs;
+			uint32_t scriptChk = currentScript->GetAnimArrayChecksum();
+#endif
 			cs = spring::hash_combine(currentScript->GetAnimArrayChecksum(), cs);
+#ifdef SYNCCHECK
+			if (tfAnim) {
+				CUnit* u = currentScript->GetUnit();
+				fprintf(tfAnim, "%d ANIMSCRIPT uid=%d def=%s scriptChk=%08x cs=%08x->%08x\n",
+					CSyncChecker::GetFrameNum(),
+					u ? u->id : -1,
+					(u && u->unitDef) ? u->unitDef->name.c_str() : "?",
+					scriptChk, prevCs, cs);
+			}
+#endif
 
 			if (!currentScript->TickAnimFinished()) {
 				animating[i] = animating.back();

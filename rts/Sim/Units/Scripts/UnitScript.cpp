@@ -50,6 +50,12 @@
 
 #include "System/Misc/TracyDefs.h"
 
+#ifdef SYNCCHECK
+#include "System/Sync/SyncChecker.h"
+#include <cstdio>
+#include <cstring>
+#endif
+
 #endif
 
 CR_BIND_INTERFACE(CUnitScript)

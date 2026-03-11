@@ -136,6 +136,18 @@
 
 #include "fmt/ranges.h"
 
+#include <cstdlib>
+#include <climits>
+
+// For sync detail logging
+#include "Sim/Units/Unit.h"
+#include "Sim/Units/UnitDef.h"
+#include "Sim/Features/Feature.h"
+#include "Sim/Features/FeatureDef.h"
+#include "Sim/Misc/Team.h"
+#include "System/SpringHash.h"
+#include "System/Sync/SyncChecker.h"
+
 
 #undef CreateDirectory
 
@@ -1743,10 +1755,41 @@ void CGame::SimFrame() {
 	{
 		SCOPED_SPECIAL_TIMER("Sim");
 
+		// --- Per-subsystem sync checksum logging ---
+		// When SYNC_DETAIL_PATH env var is set, log intermediate checksums
+		// after each simulation step to identify which subsystem causes desyncs.
+		static FILE* syncDetailFile = []() -> FILE* {
+			const char* path = std::getenv("SYNC_DETAIL_PATH");
+			if (path == nullptr)
+				return nullptr;
+			return fopen(path, "w");
+		}();
+		// Only log detailed checksums in the frame range around the known desync
+		// Set SYNC_DETAIL_START/END env vars, defaults to all frames
+		static const int detailStart = []() {
+			const char* s = std::getenv("SYNC_DETAIL_START");
+			return s ? std::atoi(s) : 0;
+		}();
+		static const int detailEnd = []() {
+			const char* s = std::getenv("SYNC_DETAIL_END");
+			return s ? std::atoi(s) : INT_MAX;
+		}();
+		const bool doDetailLog = syncDetailFile && gs->frameNum >= detailStart && gs->frameNum <= detailEnd;
+#ifdef SYNCCHECK
+		#define SYNC_DETAIL_CHECKPOINT(label) \
+			if (doDetailLog) { \
+				fprintf(syncDetailFile, "%d %s %08x\n", gs->frameNum, label, CSyncChecker::GetChecksum()); \
+			}
+#else
+		#define SYNC_DETAIL_CHECKPOINT(label)
+#endif
+
 		// Lua unit scripts change piece positions and orientations in eventHandler.GameFrame(gs->frameNum);
 		// so we need to save the previous unit state before it happened
 		unitHandler.UpdatePreFrame();
+		SYNC_DETAIL_CHECKPOINT("UpdatePreFrame")
 		featureHandler.UpdatePreFrame();
+		SYNC_DETAIL_CHECKPOINT("FeaturePreFrame")
 
 		{
 			SCOPED_TIMER("Sim::GameFrame");
@@ -1758,15 +1801,24 @@ void CGame::SimFrame() {
 
 			eventHandler.GameFrame(gs->frameNum);
 		}
+		SYNC_DETAIL_CHECKPOINT("GameFrame")
 
 		helper->Update();
+		SYNC_DETAIL_CHECKPOINT("Helper")
 		readMap->Update();
+		SYNC_DETAIL_CHECKPOINT("ReadMap")
 		smoothGround.UpdateSmoothMesh();
+		SYNC_DETAIL_CHECKPOINT("SmoothMesh")
 		mapDamage->Update();
+		SYNC_DETAIL_CHECKPOINT("MapDamage")
 		unitHandler.Update();
+		SYNC_DETAIL_CHECKPOINT("UnitHandler")
 		pathManager->Update();
+		SYNC_DETAIL_CHECKPOINT("PathManager")
 		projectileHandler.Update();
+		SYNC_DETAIL_CHECKPOINT("Projectiles")
 		featureHandler.Update();
+		SYNC_DETAIL_CHECKPOINT("Features")
 		{
 			/* The default GAME_SPEED is 30, which doesn't divide 1000 well,
 			 * so scripts will perceive 990ms per second. But this is fine,
@@ -1778,20 +1830,106 @@ void CGame::SimFrame() {
 
 			SCOPED_TIMER("Sim::Script");
 			unitScriptEngine->Tick(tickMs);
+			SYNC_DETAIL_CHECKPOINT("ScriptTick")
 
 			unitHandler.UpdatePostAnimation();
 		}
+		SYNC_DETAIL_CHECKPOINT("PostAnimation")
 		envResHandler.Update();
+		SYNC_DETAIL_CHECKPOINT("EnvRes")
 		losHandler->Update();
+		SYNC_DETAIL_CHECKPOINT("LOS")
 		// dead ghosts have to be updated in sim, after los,
 		// to make sure they represent the current knowledge correctly.
 		// should probably be split from drawer
 		CUnitDrawer::UpdateGhostedBuildings();
 		interceptHandler.Update(false);
+		SYNC_DETAIL_CHECKPOINT("Intercept")
 
 		teamHandler.GameFrame(gs->frameNum);
+		SYNC_DETAIL_CHECKPOINT("Teams")
 		playerHandler.GameFrame(gs->frameNum);
+		SYNC_DETAIL_CHECKPOINT("Players")
 		eventHandler.GameFramePost(gs->frameNum);
+		SYNC_DETAIL_CHECKPOINT("GameFramePost")
+
+		// Per-entity detail dump: when SYNC_DETAIL_ENTITIES env var is set,
+		// dump per-unit/projectile/feature state hashes for entity-level diffing.
+		// Only on frames in the detail range.
+		if (doDetailLog) {
+			static const bool doEntityDump = (std::getenv("SYNC_DETAIL_ENTITIES") != nullptr);
+			if (doEntityDump) {
+				const auto& activeUnits = unitHandler.GetActiveUnits();
+				fprintf(syncDetailFile, "%d UNITS_BEGIN count=%d\n", gs->frameNum, (int)activeUnits.size());
+				for (const CUnit* u : activeUnits) {
+					// Hash key synced state per unit
+					uint32_t uh = 0;
+					uh = spring::LiteHash(&u->pos, sizeof(u->pos), uh);
+					uh = spring::LiteHash(&u->speed, sizeof(u->speed), uh);
+					uh = spring::LiteHash(&u->frontdir, sizeof(u->frontdir), uh);
+					uh = spring::LiteHash(&u->rightdir, sizeof(u->rightdir), uh);
+					uh = spring::LiteHash(&u->updir, sizeof(u->updir), uh);
+					short heading = u->heading;
+					uh = spring::LiteHash(&heading, sizeof(heading), uh);
+					uh = spring::LiteHash(&u->health, sizeof(u->health), uh);
+					uh = spring::LiteHash(&u->experience, sizeof(u->experience), uh);
+					uh = spring::LiteHash(&u->midPos, sizeof(u->midPos), uh);
+					int physState = u->physicalState;
+					uh = spring::LiteHash(&physState, sizeof(physState), uh);
+					fprintf(syncDetailFile, "%d U id=%d def=%s h=%08x pos=%.2f,%.2f,%.2f hdg=%d hp=%.1f\n",
+						gs->frameNum, u->id, u->unitDef->name.c_str(), uh,
+						(double)u->pos.x, (double)u->pos.y, (double)u->pos.z,
+						(int)heading, (double)u->health);
+				}
+				fprintf(syncDetailFile, "%d UNITS_END\n", gs->frameNum);
+
+				const auto& projectiles = projectileHandler.GetActiveProjectiles(true);
+				fprintf(syncDetailFile, "%d PROJ_BEGIN count=%d\n", gs->frameNum, (int)projectiles.size());
+				for (const CProjectile* p : projectiles) {
+					uint32_t ph = 0;
+					ph = spring::LiteHash(&p->pos, sizeof(p->pos), ph);
+					ph = spring::LiteHash(&p->speed, sizeof(p->speed), ph);
+					ph = spring::LiteHash(&p->dir, sizeof(p->dir), ph);
+					fprintf(syncDetailFile, "%d P id=%d h=%08x pos=%.2f,%.2f,%.2f\n",
+						gs->frameNum, p->id, ph,
+						(double)p->pos.x, (double)p->pos.y, (double)p->pos.z);
+				}
+				fprintf(syncDetailFile, "%d PROJ_END\n", gs->frameNum);
+
+				const auto& activeFeatureIDs = featureHandler.GetActiveFeatureIDs();
+				fprintf(syncDetailFile, "%d FEAT_BEGIN count=%d\n", gs->frameNum, (int)activeFeatureIDs.size());
+				for (const int fid : activeFeatureIDs) {
+					const CFeature* f = featureHandler.GetFeature(fid);
+					if (!f) continue;
+					uint32_t fh = 0;
+					fh = spring::LiteHash(&f->pos, sizeof(f->pos), fh);
+					fh = spring::LiteHash(&f->health, sizeof(f->health), fh);
+					fprintf(syncDetailFile, "%d F id=%d h=%08x pos=%.2f,%.2f,%.2f\n",
+						gs->frameNum, f->id, fh,
+						(double)f->pos.x, (double)f->pos.y, (double)f->pos.z);
+				}
+				fprintf(syncDetailFile, "%d FEAT_END\n", gs->frameNum);
+
+				// Also dump RNG state, heightmap checksum, smoothmesh checksum
+				fprintf(syncDetailFile, "%d RNG_STATE seed=%lu\n", gs->frameNum, (unsigned long)gsRNG.GetGenState());
+
+				// Team resources
+				for (int a = 0; a < teamHandler.ActiveTeams(); ++a) {
+					const CTeam* t = teamHandler.Team(a);
+					uint32_t th = 0;
+					th = spring::LiteHash(&t->res, sizeof(t->res), th);
+					th = spring::LiteHash(&t->resPull, sizeof(t->resPull), th);
+					th = spring::LiteHash(&t->resIncome, sizeof(t->resIncome), th);
+					th = spring::LiteHash(&t->resExpense, sizeof(t->resExpense), th);
+					fprintf(syncDetailFile, "%d T id=%d h=%08x m=%.1f e=%.1f\n",
+						gs->frameNum, a, th,
+						(double)t->res.metal, (double)t->res.energy);
+				}
+			}
+			fflush(syncDetailFile);
+		}
+
+		#undef SYNC_DETAIL_CHECKPOINT
 	}
 
 	lastSimFrameTime = spring_gettime();

@@ -1,5 +1,18 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
+#include <cstdio>
+
+// Diagnostic wrapper: uses defined-behavior cast (float->int->short) which wraps
+// on both ARM64 and x86_64. Logs when out-of-range values are encountered.
+// NOTE: stock code uses UB short(float) which may behave differently per platform.
+static inline short FloatToShortWrap(float v, const char* caller = nullptr) {
+	short result = static_cast<short>(static_cast<int>(v));
+	if ((v > 32767.0f || v < -32768.0f) && caller) {
+		fprintf(stderr, "[COB_CAST] %s: %.1f -> short=%d (int=%d)\n",
+			caller, v, (int)result, static_cast<int>(v));
+	}
+	return result;
+}
 
 #include "CobEngine.h"
 #include "CobFile.h"
@@ -237,7 +250,7 @@ void CCobInstance::WindChanged(float heading, float speed)
 {
 	ZoneScoped;
 	Call(COBFN_SetSpeed, int(speed * 3000.0f));
-	Call(COBFN_SetDirection, short(heading * RAD2TAANG));
+	Call(COBFN_SetDirection, FloatToShortWrap(heading * RAD2TAANG, "WindChanged"));
 }
 
 
@@ -387,8 +400,8 @@ void CCobInstance::StartBuilding(float heading, float pitch)
 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
 
 	callinArgs[0] = 2;
-	callinArgs[1] = short(heading * RAD2TAANG);
-	callinArgs[2] = short(  pitch * RAD2TAANG);
+	callinArgs[1] = FloatToShortWrap(heading * RAD2TAANG, "StartBuilding:heading");
+	callinArgs[2] = FloatToShortWrap(  pitch * RAD2TAANG, "StartBuilding:pitch");
 
 	Call(COBFN_StartBuilding, callinArgs);
 }
@@ -439,8 +452,8 @@ void CCobInstance::AimWeapon(int weaponNum, float heading, float pitch)
 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
 
 	callinArgs[0] = 2;
-	callinArgs[1] = short(heading * RAD2TAANG);
-	callinArgs[2] = short(  pitch * RAD2TAANG);
+	callinArgs[1] = FloatToShortWrap(heading * RAD2TAANG, "AimWeapon:heading");
+	callinArgs[2] = FloatToShortWrap(  pitch * RAD2TAANG, "AimWeapon:pitch");
 
 	Call(COBFN_AimPrimary + COBFN_Weapon_Funcs * weaponNum, callinArgs, CBAimWeapon, weaponNum, nullptr);
 }

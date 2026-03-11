@@ -43,6 +43,16 @@ class CSyncChecker {
 		static void NewGameFrame();
 		#endif // SYNC_HISTORY
 
+		// Per-write trace logging for desync investigation
+		static void SetFrameNum(int f) { currentFrameNum = f; writeIndex = 0; }
+		static int GetFrameNum() { return currentFrameNum; }
+		static int GetWriteIndex() { return writeIndex; }
+		static void IncrementWriteIndex() { ++writeIndex; }
+		static void InitTrace();
+		static bool IsTracing() { return traceFile && currentFrameNum >= traceStart && currentFrameNum <= traceEnd; }
+		static FILE* GetTraceFile() { return traceFile; }
+		static void FlushTrace() { if (traceFile) fflush(traceFile); }
+
 	private:
 
 		/**
@@ -56,6 +66,13 @@ class CSyncChecker {
 		 * Whether one thread (doesn't have to current thread!!!) is currently processing a SimFrame.
 		 */
 		static int inSyncedCode;
+
+		// Trace logging state
+		static int currentFrameNum;
+		static int writeIndex;
+		static FILE* traceFile;
+		static int traceStart;
+		static int traceEnd;
 
 #ifdef SYNC_HISTORY
 		/**

@@ -1,9 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
 
 #include "UnitHandler.h"
 #include "Unit.h"
+#include "UnitDef.h"
 #include "UnitDefHandler.h"
 #include "UnitMemPool.h"
 #include "UnitTypes/Builder.h"
@@ -23,6 +26,7 @@
 #include "Sim/Weapons/Weapon.h"
 #include "System/EventHandler.h"
 #include "System/Log/ILog.h"
+#include "System/Sync/SyncChecker.h"
 #include "System/SpringMath.h"
 #include "System/Threading/ThreadPool.h"
 #include "System/TimeProfiler.h"
@@ -329,9 +333,40 @@ void CUnitHandler::UpdateUnitMoveTypes()
 {
 	SCOPED_TIMER("Sim::Unit::MoveType");
 
+#ifdef SYNCCHECK
+	const bool doTrace = CSyncChecker::IsTracing();
+	FILE* tf = doTrace ? CSyncChecker::GetTraceFile() : nullptr;
+	unsigned chkBefore;
+	if (tf) {
+		chkBefore = CSyncChecker::GetChecksum();
+	}
+#endif
 	GroundMoveSystem::Update();
+#ifdef SYNCCHECK
+	if (tf) {
+		unsigned chkAfter = CSyncChecker::GetChecksum();
+		if (chkBefore != chkAfter)
+			fprintf(tf, "%d UH_MT_Ground %08x->%08x\n", CSyncChecker::GetFrameNum(), chkBefore, chkAfter);
+		chkBefore = chkAfter;
+	}
+#endif
 	GeneralMoveSystem::Update();
+#ifdef SYNCCHECK
+	if (tf) {
+		unsigned chkAfter = CSyncChecker::GetChecksum();
+		if (chkBefore != chkAfter)
+			fprintf(tf, "%d UH_MT_General %08x->%08x\n", CSyncChecker::GetFrameNum(), chkBefore, chkAfter);
+		chkBefore = chkAfter;
+	}
+#endif
 	UnitTrapCheckSystem::Update();
+#ifdef SYNCCHECK
+	if (tf) {
+		unsigned chkAfter = CSyncChecker::GetChecksum();
+		if (chkBefore != chkAfter)
+			fprintf(tf, "%d UH_MT_TrapCheck %08x->%08x\n", CSyncChecker::GetFrameNum(), chkBefore, chkAfter);
+	}
+#endif
 }
 
 void CUnitHandler::UpdateUnitLosStates()
@@ -364,6 +399,11 @@ void CUnitHandler::SlowUpdateUnits()
 	activeSlowUpdateUnit = idxEnd;
 	// stagger the SlowUpdate's
 
+#ifdef SYNCCHECK
+	const bool doTrace = CSyncChecker::IsTracing();
+	FILE* tf = doTrace ? CSyncChecker::GetTraceFile() : nullptr;
+#endif
+
 	static std::vector<CUnit*> updateBoundingVolumeList;
 	updateBoundingVolumeList.clear();
 	{
@@ -371,10 +411,23 @@ void CUnitHandler::SlowUpdateUnits()
 		for (size_t i = idxBeg; i < idxEnd; ++i) {
 			CUnit* unit = activeUnits[i];
 
+#ifdef SYNCCHECK
+			unsigned chkBefore = 0;
+			if (tf) chkBefore = CSyncChecker::GetChecksum();
+#endif
 			unit->SanityCheck();
 			unit->SlowUpdate();
 			unit->SlowUpdateWeapons();
 			unit->SanityCheck();
+#ifdef SYNCCHECK
+			if (tf) {
+				unsigned chkAfter = CSyncChecker::GetChecksum();
+				if (chkBefore != chkAfter)
+					fprintf(tf, "%d UH_SlowU id=%d def=%s %08x->%08x\n",
+						CSyncChecker::GetFrameNum(), unit->id,
+						unit->unitDef->name.c_str(), chkBefore, chkAfter);
+			}
+#endif
 
 			if (!unit->isDead && unit->localModel.GetBoundariesNeedsRecalc())
 				updateBoundingVolumeList.emplace_back(unit);
@@ -394,16 +447,34 @@ void CUnitHandler::UpdateUnits()
 {
 	SCOPED_TIMER("Sim::Unit::Update");
 
+#ifdef SYNCCHECK
+	const bool doTrace = CSyncChecker::IsTracing();
+	FILE* tf = doTrace ? CSyncChecker::GetTraceFile() : nullptr;
+#endif
+
 	size_t activeUnitCount = activeUnits.size();
 	for (size_t i = 0; i < activeUnitCount; ++i) {
 		CUnit* unit = activeUnits[i];
 
+#ifdef SYNCCHECK
+		unsigned chkBefore = 0;
+		if (tf) chkBefore = CSyncChecker::GetChecksum();
+#endif
 		unit->SanityCheck();
 		unit->Update();
 		unit->moveType->UpdateCollisionMap();
 		// unsynced; done on-demand when drawing unit
 		// unit->UpdateLocalModel();
 		unit->SanityCheck();
+#ifdef SYNCCHECK
+		if (tf) {
+			unsigned chkAfter = CSyncChecker::GetChecksum();
+			if (chkBefore != chkAfter)
+				fprintf(tf, "%d UH_Update id=%d def=%s %08x->%08x\n",
+					CSyncChecker::GetFrameNum(), unit->id,
+					unit->unitDef->name.c_str(), chkBefore, chkAfter);
+		}
+#endif
 
 		assert(activeUnits[i] == unit);
 	}
@@ -421,8 +492,28 @@ void CUnitHandler::UpdateUnitWeapons()
 	}
 	{
 		SCOPED_TIMER("Sim::Unit::Weapon");
+
+#ifdef SYNCCHECK
+		const bool doTrace = CSyncChecker::IsTracing();
+		FILE* tf = doTrace ? CSyncChecker::GetTraceFile() : nullptr;
+#endif
+
 		for (activeUpdateUnit = 0; activeUpdateUnit < activeUnits.size(); ++activeUpdateUnit) {
+#ifdef SYNCCHECK
+			unsigned chkBefore = 0;
+			if (tf) chkBefore = CSyncChecker::GetChecksum();
+#endif
 			activeUnits[activeUpdateUnit]->UpdateWeapons();
+#ifdef SYNCCHECK
+			if (tf) {
+				CUnit* unit = activeUnits[activeUpdateUnit];
+				unsigned chkAfter = CSyncChecker::GetChecksum();
+				if (chkBefore != chkAfter)
+					fprintf(tf, "%d UH_Weapon id=%d def=%s %08x->%08x\n",
+						CSyncChecker::GetFrameNum(), unit->id,
+						unit->unitDef->name.c_str(), chkBefore, chkAfter);
+			}
+#endif
 		}
 	}
 }
@@ -443,13 +534,62 @@ void CUnitHandler::Update()
 {
 	inUpdateCall = true;
 
+#ifdef SYNCCHECK
+	// Per-sub-step trace logging within UnitHandler
+	static FILE* uhTraceFile = []() -> FILE* {
+		const char* path = std::getenv("SYNC_TRACE_PATH");
+		return (path != nullptr) ? nullptr : nullptr; // initialized in InitUHTrace
+	}();
+	static bool uhTraceInited = false;
+	if (!uhTraceInited) {
+		uhTraceInited = true;
+		// Reuse the detail file for sub-step logging
+		const char* path = std::getenv("SYNC_DETAIL_PATH");
+		if (path != nullptr)
+			uhTraceFile = fopen("/dev/null", "w"); // marker: detail logging is active
+	}
+	const bool doUHTrace = CSyncChecker::IsTracing();
+	FILE* tf = doUHTrace ? CSyncChecker::GetTraceFile() : nullptr;
+
+	auto logSubStep = [&](const char* label) {
+		if (tf) {
+			fprintf(tf, "%d UH_%s %08x widx=%d\n",
+				CSyncChecker::GetFrameNum(), label,
+				CSyncChecker::GetChecksum(), CSyncChecker::GetWriteIndex());
+		}
+	};
+
+	logSubStep("BEGIN");
+#endif
+
 	DeleteUnits();
+#ifdef SYNCCHECK
+	logSubStep("DeleteUnits");
+#endif
 	UpdateUnitMoveTypes();
+#ifdef SYNCCHECK
+	logSubStep("MoveTypes");
+#endif
 	QueueDeleteUnits();
+#ifdef SYNCCHECK
+	logSubStep("QueueDelete");
+#endif
 	UpdateUnitLosStates();
+#ifdef SYNCCHECK
+	logSubStep("LosStates");
+#endif
 	SlowUpdateUnits();
+#ifdef SYNCCHECK
+	logSubStep("SlowUpdate");
+#endif
 	UpdateUnits();
+#ifdef SYNCCHECK
+	logSubStep("UpdateUnits");
+#endif
 	UpdateUnitWeapons();
+#ifdef SYNCCHECK
+	logSubStep("Weapons");
+#endif
 
 	inUpdateCall = false;
 }

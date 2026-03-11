@@ -1699,6 +1699,12 @@ void CGame::SimFrame() {
 
 	// note: starts at -1, first actual frame is 0
 	gs->frameNum += 1;
+#ifdef SYNCCHECK
+	// Initialize trace once, set frame for per-write trace logging
+	static bool traceInited = false;
+	if (!traceInited) { CSyncChecker::InitTrace(); traceInited = true; }
+	CSyncChecker::SetFrameNum(gs->frameNum);
+#endif
 #ifdef SYNC_HISTORY
 	CSyncChecker::NewGameFrame();
 #endif
@@ -1930,6 +1936,16 @@ void CGame::SimFrame() {
 		}
 
 		#undef SYNC_DETAIL_CHECKPOINT
+
+#ifdef SYNCCHECK
+		// Flush trace at end of each traced frame
+		if (CSyncChecker::IsTracing()) {
+			FILE* tf = CSyncChecker::GetTraceFile();
+			fprintf(tf, "%d FRAME_END %08x writes=%d\n",
+				gs->frameNum, CSyncChecker::GetChecksum(), CSyncChecker::GetWriteIndex());
+			CSyncChecker::FlushTrace();
+		}
+#endif
 	}
 
 	lastSimFrameTime = spring_gettime();

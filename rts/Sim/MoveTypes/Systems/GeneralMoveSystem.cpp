@@ -17,6 +17,11 @@
 
 #include "System/Misc/TracyDefs.h"
 
+#ifdef SYNCCHECK
+#include "System/Sync/SyncChecker.h"
+#include <cstdio>
+#endif
+
 using namespace MoveTypes;
 
 void GeneralMoveSystem::Init() {
@@ -30,7 +35,16 @@ void GeneralMoveSystem::Update() {
     auto view = Sim::registry.view<GeneralMoveType>();
 	{
         SCOPED_TIMER("Sim::Unit::MoveType::5::Update");
-        view.each([](GeneralMoveType& unitId){
+#ifdef SYNCCHECK
+        const bool doTraceGM = CSyncChecker::IsTracing();
+        FILE* tfGM = doTraceGM ? CSyncChecker::GetTraceFile() : nullptr;
+        if (tfGM) fprintf(tfGM, "%d GenMS_Update_BEGIN %08x\n", CSyncChecker::GetFrameNum(), CSyncChecker::GetChecksum());
+#endif
+        view.each([
+#ifdef SYNCCHECK
+            tfGM
+#endif
+        ](GeneralMoveType& unitId){
             CUnit* unit = unitHandler.GetUnit(unitId.value);
             AMoveType* moveType = unit->moveType;
 
@@ -38,8 +52,21 @@ void GeneralMoveSystem::Update() {
             unit->SanityCheck();
             #endif
 
+#ifdef SYNCCHECK
+            unsigned chkBefore = 0;
+            if (tfGM) chkBefore = CSyncChecker::GetChecksum();
+#endif
             if (moveType->Update())
                 eventHandler.UnitMoved(unit);
+#ifdef SYNCCHECK
+            if (tfGM) {
+                unsigned chkAfter = CSyncChecker::GetChecksum();
+                if (chkBefore != chkAfter)
+                    fprintf(tfGM, "%d GenMS_Update id=%d def=%s %08x->%08x\n",
+                        CSyncChecker::GetFrameNum(), unit->id,
+                        unit->unitDef->name.c_str(), chkBefore, chkAfter);
+            }
+#endif
 
             // this unit is not coming back, kill it now without any death
             // sequence (s.t. deathScriptFinished becomes true immediately)

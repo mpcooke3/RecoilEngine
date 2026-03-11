@@ -9,11 +9,17 @@
 #include "Sim/Misc/QuadField.h"
 #include "Sim/MoveTypes/Components/MoveTypesComponents.h"
 #include "Sim/Units/Unit.h"
+#include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitHandler.h"
 
 #include "System/EventHandler.h"
 #include "System/TimeProfiler.h"
 #include "System/Threading/ThreadPool.h"
+
+#ifdef SYNCCHECK
+#include "System/Sync/SyncChecker.h"
+#include <cstdio>
+#endif
 
 using namespace MoveTypes;
 
@@ -53,25 +59,68 @@ void GroundMoveSystem::Update() {
 	{
 		SCOPED_TIMER("Sim::Unit::MoveType::2::UpdatePreCollisions");
 
+#ifdef SYNCCHECK
+		const bool doTrace = CSyncChecker::IsTracing();
+		FILE* tf = doTrace ? CSyncChecker::GetTraceFile() : nullptr;
+#endif
+
         // These two sections are ST due to the numerous synced vars being changed.
         {
             auto view = Sim::registry.view<ChangeHeadingEvent>();
-            view.each([](ChangeHeadingEvent& event){
+#ifdef SYNCCHECK
+            if (tf) fprintf(tf, "%d GMS_ChangeHeading_BEGIN %08x\n", CSyncChecker::GetFrameNum(), CSyncChecker::GetChecksum());
+#endif
+            view.each([
+#ifdef SYNCCHECK
+                tf
+#endif
+            ](ChangeHeadingEvent& event){
                 if (event.changed) {
                     CUnit* unit = unitHandler.GetUnit(event.unitId);
                     CGroundMoveType* moveType = static_cast<CGroundMoveType*>(unit->moveType);
+#ifdef SYNCCHECK
+                    unsigned chkBefore = 0;
+                    if (tf) chkBefore = CSyncChecker::GetChecksum();
+#endif
                     moveType->ChangeHeading(event.deltaHeading);
+#ifdef SYNCCHECK
+                    if (tf) {
+                        unsigned chkAfter = CSyncChecker::GetChecksum();
+                        if (chkBefore != chkAfter)
+                            fprintf(tf, "%d GMS_ChgHdg id=%d def=%s %08x->%08x dh=%d\n",
+                                CSyncChecker::GetFrameNum(), unit->id,
+                                unit->unitDef->name.c_str(), chkBefore, chkAfter,
+                                (int)event.deltaHeading);
+                    }
+#endif
                     event.changed = false;
                 }
             });
         }
         {
             auto view = Sim::registry.view<ChangeMainHeadingEvent>();
-            view.each([](ChangeMainHeadingEvent& event){
+            view.each([
+#ifdef SYNCCHECK
+                tf
+#endif
+            ](ChangeMainHeadingEvent& event){
                 if (event.changed) {
                     CUnit* unit = unitHandler.GetUnit(event.unitId);
                     CGroundMoveType* moveType = static_cast<CGroundMoveType*>(unit->moveType);
+#ifdef SYNCCHECK
+                    unsigned chkBefore = 0;
+                    if (tf) chkBefore = CSyncChecker::GetChecksum();
+#endif
                     moveType->SetMainHeading();
+#ifdef SYNCCHECK
+                    if (tf) {
+                        unsigned chkAfter = CSyncChecker::GetChecksum();
+                        if (chkBefore != chkAfter)
+                            fprintf(tf, "%d GMS_MainHdg id=%d def=%s %08x->%08x\n",
+                                CSyncChecker::GetFrameNum(), unit->id,
+                                unit->unitDef->name.c_str(), chkBefore, chkAfter);
+                    }
+#endif
                     event.changed = false;
                 }
             });
@@ -90,12 +139,34 @@ void GroundMoveSystem::Update() {
 			moveType->UpdateUnitPosition();
 		});
 
-		view.each([](GroundMoveType& unitId){
+#ifdef SYNCCHECK
+		const bool doTracePre = CSyncChecker::IsTracing();
+		FILE* tfPre = doTracePre ? CSyncChecker::GetTraceFile() : nullptr;
+		if (tfPre) fprintf(tfPre, "%d GMS_PreColl_BEGIN %08x\n", CSyncChecker::GetFrameNum(), CSyncChecker::GetChecksum());
+#endif
+		view.each([
+#ifdef SYNCCHECK
+			tfPre
+#endif
+		](GroundMoveType& unitId){
 			CUnit* unit = unitHandler.GetUnit(unitId.value);
 			CGroundMoveType* moveType = static_cast<CGroundMoveType*>(unit->moveType);
             assert(moveType != nullptr);
 
+#ifdef SYNCCHECK
+			unsigned chkBefore = 0;
+			if (tfPre) chkBefore = CSyncChecker::GetChecksum();
+#endif
 			moveType->UpdatePreCollisions();
+#ifdef SYNCCHECK
+			if (tfPre) {
+				unsigned chkAfter = CSyncChecker::GetChecksum();
+				if (chkBefore != chkAfter)
+					fprintf(tfPre, "%d GMS_PreColl id=%d def=%s %08x->%08x\n",
+						CSyncChecker::GetFrameNum(), unit->id,
+						unit->unitDef->name.c_str(), chkBefore, chkAfter);
+			}
+#endif
 
             // this unit is not coming back, kill it now without any death
             // sequence (s.t. deathScriptFinished becomes true immediately)
@@ -149,13 +220,35 @@ void GroundMoveSystem::Update() {
         // Need an alternative method to support sync values that doesn't stop MT.
         // Same for change heading above as well.
         SCOPED_TIMER("Sim::Unit::MoveType::5::Update");
+#ifdef SYNCCHECK
+        const bool doTrace5 = CSyncChecker::IsTracing();
+        FILE* tf5 = doTrace5 ? CSyncChecker::GetTraceFile() : nullptr;
+        if (tf5) fprintf(tf5, "%d GMS_Update_BEGIN %08x\n", CSyncChecker::GetFrameNum(), CSyncChecker::GetChecksum());
+#endif
         auto view = Sim::registry.view<GroundMoveType>();
-        view.each([&view](GroundMoveType& unitId){
+        view.each([&view
+#ifdef SYNCCHECK
+            , tf5
+#endif
+        ](GroundMoveType& unitId){
             CUnit* unit = unitHandler.GetUnit(unitId.value);
             CGroundMoveType* moveType = static_cast<CGroundMoveType*>(unit->moveType);
             assert(moveType != nullptr);
-            if (moveType->Update()) 
+#ifdef SYNCCHECK
+            unsigned chkBefore = 0;
+            if (tf5) chkBefore = CSyncChecker::GetChecksum();
+#endif
+            if (moveType->Update())
                 eventHandler.UnitMoved(unit);
+#ifdef SYNCCHECK
+            if (tf5) {
+                unsigned chkAfter = CSyncChecker::GetChecksum();
+                if (chkBefore != chkAfter)
+                    fprintf(tf5, "%d GMS_Update id=%d def=%s %08x->%08x\n",
+                        CSyncChecker::GetFrameNum(), unit->id,
+                        unit->unitDef->name.c_str(), chkBefore, chkAfter);
+            }
+#endif
 
             #ifndef NDEBUG
             unit->SanityCheck();

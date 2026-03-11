@@ -9,9 +9,28 @@
 #include "System/Threading/ThreadPool.h"
 #include "System/HashSpec.h"
 
+#include <cstdlib>
+#include <climits>
 
 unsigned CSyncChecker::g_checksum;
 int CSyncChecker::inSyncedCode;
+int CSyncChecker::currentFrameNum = 0;
+int CSyncChecker::writeIndex = 0;
+FILE* CSyncChecker::traceFile = nullptr;
+int CSyncChecker::traceStart = 0;
+int CSyncChecker::traceEnd = INT_MAX;
+
+void CSyncChecker::InitTrace()
+{
+	const char* path = std::getenv("SYNC_TRACE_PATH");
+	if (path != nullptr)
+		traceFile = fopen(path, "w");
+
+	const char* s = std::getenv("SYNC_TRACE_START");
+	if (s != nullptr) traceStart = std::atoi(s);
+	const char* e = std::getenv("SYNC_TRACE_END");
+	if (e != nullptr) traceEnd = std::atoi(e);
+}
 
 void CSyncChecker::NewFrame()
 {

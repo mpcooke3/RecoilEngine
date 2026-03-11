@@ -631,6 +631,20 @@ void CGame::ClientReadNet()
 				// reset checksum every 4096 frames =~ 2.5 minutes
 				if ((gs->frameNum & 4095) == 0)
 					CSyncChecker::NewFrame();
+
+				// write per-frame checksums to file for cross-arch comparison
+				{
+					static FILE* syncFile = []() -> FILE* {
+						const char* path = std::getenv("SYNC_CHECKSUMS_PATH");
+						if (path == nullptr)
+							return nullptr;
+						return fopen(path, "w");
+					}();
+					if (syncFile) {
+						fprintf(syncFile, "%d FrameEnd %08x\n", gs->frameNum, CSyncChecker::GetChecksum());
+						fflush(syncFile);
+					}
+				}
 #endif
 				AddTraffic(-1, packetCode, dataLength);
 			} break;
@@ -666,19 +680,6 @@ void CGame::ClientReadNet()
 					const char* fmtStr = "[DESYNC WARNING] checksum %x from demo %s %d (%s) does not match our checksum %x for frame-number %d";
 
 					LOG_L(L_ERROR, fmtStr, checkSum, pType, playerNum, pName, ourCheckSum, frameNum);
-				}
-
-				// write per-frame checksums to file for cross-arch comparison
-				{
-					static FILE* syncFile = []() -> FILE* {
-						const char* path = std::getenv("SYNC_CHECKSUMS_PATH");
-						return fopen(path ? path : "/tmp/sync_checksums.txt", "w");
-					}();
-					if (syncFile) {
-						fprintf(syncFile, "%d FrameEnd %08x\n", gs->frameNum, CSyncChecker::GetChecksum());
-						if ((gs->frameNum & 255) == 0)
-							fflush(syncFile);
-					}
 				}
 #endif
 			} break;

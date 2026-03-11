@@ -224,7 +224,26 @@ void CUnitScript::TickAllAnims(int deltaTime)
 		}
 
 		// checksum all anims (live + done)
+#ifdef SYNCCHECK
+		uint32_t prevChk = checksum;
+#endif
 		checksum = spring::LiteHash(ai, checksum);
+#ifdef SYNCCHECK
+		if (CSyncChecker::IsTracing() && unit) {
+			FILE* tf = CSyncChecker::GetTraceFile();
+			uint8_t raw[sizeof(AnimInfo)];
+			std::memcpy(raw, &ai, sizeof(AnimInfo));
+			fprintf(tf, "%d ANIM uid=%d t=%d p=%d a=%d spd=%.9g dst=%.9g acc=%.9g d=%d hw=%d chk=%08x->%08x raw=",
+				CSyncChecker::GetFrameNum(), unit->id,
+				(int)ai.animType, ai.piece, ai.axis,
+				(double)ai.speed, (double)ai.dest, (double)ai.accel,
+				(int)ai.done, (int)ai.hasWaiting,
+				prevChk, checksum);
+			for (unsigned b = 0; b < sizeof(AnimInfo); b++)
+				fprintf(tf, "%02x", raw[b]);
+			fprintf(tf, "\n");
+		}
+#endif
 	}
 
 	spring::VectorEraseIfAll(anims, [](const auto& ai) { return ai.done; });

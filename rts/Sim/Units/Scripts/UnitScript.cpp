@@ -57,6 +57,21 @@
 #include <string>
 #endif
 
+// Portable float-to-int conversion that matches x86 CVTTSS2SI behavior.
+// On x86, CVTTSS2SI returns 0x80000000 (INT_MIN) for NaN, infinity, and
+// out-of-range values. On ARM64, FCVTZS returns 0 for NaN and saturates
+// for overflow. This function ensures consistent behavior across platforms,
+// which is critical for sync-determinism in COB scripts (e.g. FakeUpright
+// scripts that compute sqrt of negative values, producing NaN).
+static inline int FloatToIntPortable(float v) {
+#if defined(__aarch64__) || defined(__arm__)
+	// Match x86 CVTTSS2SI: return INT_MIN for NaN and out-of-range
+	if (__builtin_expect(math::isnan(v) || v > 2147483520.0f || v < -2147483648.0f, 0))
+		return INT_MIN;
+#endif
+	return static_cast<int>(v);
+}
+
 // Animation trace file for debugging cross-platform desync
 // Set ANIM_TRACE_PATH env var to enable
 // ANIM_TRACE_UID: filter by unit ID (-1 or unset = all)
@@ -654,6 +669,25 @@ void CUnitScript::Turn(int piece, int axis, float speed, float destination)
 			CSyncChecker::GetFrameNum(), unit->id, piece, axis,
 			(double)speed, (double)destination);
 	}
+	// Log Turn for piece 1 to trace piece state divergence
+	if (piece == 1 && unit) {
+		static FILE* turnTraceFile = nullptr;
+		static bool turnTraceInit = false;
+		if (!turnTraceInit) {
+			turnTraceInit = true;
+			const char* path = std::getenv("DMG_TRACE_PATH");
+			if (path) {
+				std::string subPath = std::string(path) + ".turn1";
+				turnTraceFile = fopen(subPath.c_str(), "w");
+			}
+		}
+		if (turnTraceFile) {
+			fprintf(turnTraceFile, "%d TURN uid=%d piece=%d axis=%d spd=%.9g dst=%.9g clampDst=%.9g\n",
+				gs->frameNum, unit->id, piece, axis,
+				(double)speed, (double)destination, (double)ClampRad(destination));
+			fflush(turnTraceFile);
+		}
+	}
 #endif
 	AddAnim(ATurn, piece, axis, math::fabs(speed), ClampRad(destination), 0);
 }
@@ -705,6 +739,29 @@ void CUnitScript::TurnNow(int piece, int axis, float destination)
 	destination = ClampRad(destination);
 
 	float3 rot = p->GetRotation();
+
+#ifdef SYNCCHECK
+	// Log TurnNow for piece 1 to trace piece state divergence
+	if (piece == 1 && unit) {
+		static FILE* turnNowTraceFile = nullptr;
+		static bool turnNowTraceInit = false;
+		if (!turnNowTraceInit) {
+			turnNowTraceInit = true;
+			const char* path = std::getenv("DMG_TRACE_PATH");
+			if (path) {
+				std::string subPath = std::string(path) + ".turnnow";
+				turnNowTraceFile = fopen(subPath.c_str(), "w");
+			}
+		}
+		if (turnNowTraceFile) {
+			fprintf(turnNowTraceFile, "%d TURNNOW uid=%d piece=%d axis=%d dst=%.9g oldRot=(%.9g,%.9g,%.9g)\n",
+				gs->frameNum, unit->id, piece, axis,
+				(double)destination,
+				(double)rot.x, (double)rot.y, (double)rot.z);
+			fflush(turnNowTraceFile);
+		}
+	}
+#endif
 
 	if (rot[axis] == destination)
 		return;
@@ -1191,6 +1248,39 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		}
 		const float3 relPos = GetPiecePos(p1);
 		const float3 absPos = unit->GetObjectSpacePos(relPos);
+#ifdef SYNCCHECK
+		{
+			static FILE* pieceYFile = nullptr;
+			static int pieceYStart = 0;
+			static int pieceYEnd = INT_MAX;
+			static bool pieceYInit = false;
+			if (!pieceYInit) {
+				pieceYInit = true;
+				const char* path = std::getenv("DMG_TRACE_PATH");
+				if (path) {
+					std::string subPath = std::string(path) + ".piecey";
+					pieceYFile = fopen(subPath.c_str(), "w");
+				}
+				const char* s = std::getenv("DMG_TRACE_START");
+				if (s) pieceYStart = std::atoi(s);
+				const char* e = std::getenv("DMG_TRACE_END");
+				if (e) pieceYEnd = std::atoi(e);
+			}
+			if (pieceYFile && gs->frameNum >= pieceYStart && gs->frameNum <= pieceYEnd) {
+				fprintf(pieceYFile, "%d PIECE_Y uid=%d piece=%d relPos=(%.9g,%.9g,%.9g) absPos=(%.9g,%.9g,%.9g) "
+					"pos=(%.9g,%.9g,%.9g) front=(%.9g,%.9g,%.9g) right=(%.9g,%.9g,%.9g) up=(%.9g,%.9g,%.9g) result=%d\n",
+					gs->frameNum, unit->id, p1,
+					(double)relPos.x, (double)relPos.y, (double)relPos.z,
+					(double)absPos.x, (double)absPos.y, (double)absPos.z,
+					(double)unit->pos.x, (double)unit->pos.y, (double)unit->pos.z,
+					(double)unit->frontdir.x, (double)unit->frontdir.y, (double)unit->frontdir.z,
+					(double)unit->rightdir.x, (double)unit->rightdir.y, (double)unit->rightdir.z,
+					(double)unit->updir.x, (double)unit->updir.y, (double)unit->updir.z,
+					int(absPos.y * COBSCALE));
+				fflush(pieceYFile);
+			}
+		}
+#endif
 		return int(absPos.y * COBSCALE);
 	} break;
 
@@ -1295,8 +1385,39 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		return !!unit->wantCloak;
 	case UPRIGHT:
 		return !!unit->upright;
-	case POW:
-		return int(math::pow((p1 * 1.0f) / COBSCALE, (p2 * 1.0f) / COBSCALE) * COBSCALE);
+	case POW: {
+		const float base = (p1 * 1.0f) / COBSCALE;
+		const float exp = (p2 * 1.0f) / COBSCALE;
+		const float powResult = math::pow(base, exp);
+		const int result = FloatToIntPortable(powResult * COBSCALE);
+#ifdef SYNCCHECK
+		{
+			static FILE* powFile = nullptr;
+			static int powStart = 0;
+			static int powEnd = INT_MAX;
+			static bool powInit = false;
+			if (!powInit) {
+				powInit = true;
+				const char* path = std::getenv("DMG_TRACE_PATH");
+				if (path) {
+					std::string subPath = std::string(path) + ".pow";
+					powFile = fopen(subPath.c_str(), "w");
+				}
+				const char* s = std::getenv("DMG_TRACE_START");
+				if (s) powStart = std::atoi(s);
+				const char* e = std::getenv("DMG_TRACE_END");
+				if (e) powEnd = std::atoi(e);
+			}
+			if (powFile && gs->frameNum >= powStart && gs->frameNum <= powEnd) {
+				fprintf(powFile, "%d POW uid=%d p1=%d p2=%d base=%.9g exp=%.9g pow=%.9g result=%d\n",
+					gs->frameNum, unit->id, p1, p2,
+					(double)base, (double)exp, (double)powResult, result);
+				fflush(powFile);
+			}
+		}
+#endif
+		return result;
+	}
 	case PRINT: {
 		const char*   unitName = unit->unitDef->name.c_str();
 		const char* scriptName = unit->unitDef->scriptName.c_str();
@@ -1495,13 +1616,13 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 	case ABS:
 		return std::abs(p1);
 	case KSIN:
-		return int(1024*math::sinf(TAANG2RAD*(float)p1));
+		return FloatToIntPortable(1024*math::sinf(TAANG2RAD*(float)p1));
 	case KCOS:
-		return int(1024*math::cosf(TAANG2RAD*(float)p1));
+		return FloatToIntPortable(1024*math::cosf(TAANG2RAD*(float)p1));
 	case KTAN:
-		return int(1024*math::tanf(TAANG2RAD*(float)p1));
+		return FloatToIntPortable(1024*math::tanf(TAANG2RAD*(float)p1));
 	case SQRT:
-		return int(math::sqrt((float)p1));
+		return FloatToIntPortable(math::sqrt((float)p1));
 
 	case FLANK_B_MODE:
 		return unit->flankingBonusMode;

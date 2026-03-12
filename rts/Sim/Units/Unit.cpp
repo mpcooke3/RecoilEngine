@@ -67,6 +67,12 @@
 #include "System/creg/STL_List.h"
 #include "System/Sound/ISoundChannels.h"
 #include "System/Sync/SyncedPrimitive.h"
+#include "Sim/Misc/GlobalSynced.h"
+
+#ifdef SYNCCHECK
+#include <cstdio>
+#include <cstdlib>
+#endif
 
 #undef near
 
@@ -1320,6 +1326,44 @@ void CUnit::DoDamage(
 		baseDamage *= curArmorMultiple;
 		restTime = 0; // bleeding != resting
 	}
+
+#ifdef SYNCCHECK
+	{
+		static FILE* ddTraceFile = nullptr;
+		static int ddTraceUid = -1;
+		static int ddTraceStart = 0;
+		static int ddTraceEnd = INT_MAX;
+		static bool ddTraceInit = false;
+		if (!ddTraceInit) {
+			ddTraceInit = true;
+			const char* p = std::getenv("DMG_TRACE_PATH");
+			if (p) {
+				std::string subPath = std::string(p) + ".dodmg";
+				ddTraceFile = fopen(subPath.c_str(), "w");
+			}
+			const char* u = std::getenv("DMG_TRACE_UID");
+			if (u) ddTraceUid = std::atoi(u);
+			const char* s = std::getenv("DMG_TRACE_START");
+			if (s) ddTraceStart = std::atoi(s);
+			const char* e = std::getenv("DMG_TRACE_END");
+			if (e) ddTraceEnd = std::atoi(e);
+		}
+		if (ddTraceFile && gs->frameNum >= ddTraceStart && gs->frameNum <= ddTraceEnd &&
+		    (ddTraceUid < 0 || id == ddTraceUid)) {
+			float3 hitDir = -(impulse * impulseMult).SafeNormalize2D();
+			float3 objSpaceHitDir = GetObjectSpaceVec(hitDir) * 500.0f;
+			fprintf(ddTraceFile, "%d DODMG uid=%d def=%s baseDmg=%.4f wdef=%d proj=%d impulse=(%.4f,%.4f,%.4f) hitDir=(%.4f,%.4f,%.4f) objHitDir=(%.1f,%.1f,%.1f) attacker=%d\n",
+				gs->frameNum, id,
+				unitDef ? unitDef->name.c_str() : "?",
+				baseDamage, weaponDefID, projectileID,
+				impulse.x, impulse.y, impulse.z,
+				hitDir.x, hitDir.y, hitDir.z,
+				objSpaceHitDir.x, objSpaceHitDir.y, objSpaceHitDir.z,
+				attacker ? attacker->id : -1);
+			fflush(ddTraceFile);
+		}
+	}
+#endif
 
 	if (eventHandler.UnitPreDamaged(this, attacker, baseDamage, weaponDefID, projectileID, isParalyzer, &baseDamage, &impulseMult))
 		return;

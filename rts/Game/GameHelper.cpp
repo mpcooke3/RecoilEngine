@@ -42,6 +42,11 @@
 
 #include "System/Misc/TracyDefs.h"
 
+#ifdef SYNCCHECK
+#include "Sim/Misc/GlobalSynced.h"
+#include <cstdio>
+#include <cstdlib>
+#endif
 
 static CGameHelper gGameHelper;
 CGameHelper* helper = &gGameHelper;
@@ -131,6 +136,41 @@ void CGameHelper::DoExplosionDamage(
 	// linear damage falloff with distance
 	const float expDist = (expRadius != 0.0f) ? vol->GetPointSurfaceDistance(unit, lhp, expPos) : 0.0f;
 	const float expRim = expDist * expEdgeEffect;
+
+#ifdef SYNCCHECK
+	{
+		static FILE* dmgTraceFile = nullptr;
+		static int dmgTraceUid = -1;
+		static int dmgTraceStart = 0;
+		static int dmgTraceEnd = INT_MAX;
+		static bool dmgTraceInit = false;
+		if (!dmgTraceInit) {
+			dmgTraceInit = true;
+			const char* p = std::getenv("DMG_TRACE_PATH");
+			if (p) dmgTraceFile = fopen(p, "w");
+			const char* u = std::getenv("DMG_TRACE_UID");
+			if (u) dmgTraceUid = std::atoi(u);
+			const char* s = std::getenv("DMG_TRACE_START");
+			if (s) dmgTraceStart = std::atoi(s);
+			const char* e = std::getenv("DMG_TRACE_END");
+			if (e) dmgTraceEnd = std::atoi(e);
+		}
+		if (dmgTraceFile && gs->frameNum >= dmgTraceStart && gs->frameNum <= dmgTraceEnd &&
+		    (dmgTraceUid < 0 || unit->id == dmgTraceUid)) {
+			fprintf(dmgTraceFile, "%d EXPDMG uid=%d def=%s expDist=%.6f expRad=%.6f lhp=%s lhpPos=(%.3f,%.3f,%.3f) volPos=(%.3f,%.3f,%.3f) expPos=(%.3f,%.3f,%.3f) wdef=%d proj=%d %s\n",
+				gs->frameNum, unit->id,
+				unit->unitDef ? unit->unitDef->name.c_str() : "?",
+				expDist, expRadius,
+				lhp ? "yes" : "no",
+				lhpPos.x, lhpPos.y, lhpPos.z,
+				volPos.x, volPos.y, volPos.z,
+				expPos.x, expPos.y, expPos.z,
+				weaponDefID, projectileID,
+				(expDist > expRadius) ? "MISS" : "HIT");
+			fflush(dmgTraceFile);
+		}
+	}
+#endif
 
 	// return early if (distance > radius)
 	if (expDist > expRadius)

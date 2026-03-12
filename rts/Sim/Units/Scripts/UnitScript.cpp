@@ -57,6 +57,32 @@
 #include <string>
 #endif
 
+// Animation trace file for debugging cross-platform desync
+// Set ANIM_TRACE_PATH env var to enable, ANIM_TRACE_UID to filter by unit ID
+static FILE* animTraceFile = nullptr;
+static int animTraceUid = -1;
+static bool animTraceInit = false;
+
+static void InitAnimTrace() {
+	if (animTraceInit) return;
+	animTraceInit = true;
+	const char* path = std::getenv("ANIM_TRACE_PATH");
+	if (path) {
+		animTraceFile = fopen(path, "w");
+		if (animTraceFile) {
+			const char* uid = std::getenv("ANIM_TRACE_UID");
+			if (uid) animTraceUid = std::atoi(uid);
+			fprintf(animTraceFile, "# AnimTrace uid_filter=%d\n", animTraceUid);
+			fflush(animTraceFile);
+		}
+	}
+}
+
+static bool ShouldTraceUnit(int uid) {
+	InitAnimTrace();
+	return animTraceFile && (animTraceUid < 0 || animTraceUid == uid);
+}
+
 #endif
 
 CR_BIND_INTERFACE(CUnitScript)
@@ -147,13 +173,41 @@ bool CUnitScript::TurnToward(float& cur, float dest, float speed)
 	assert(cur  < math::TWOPI);
 
 	float delta = math::fmod(dest - cur + math::THREEPI, math::TWOPI) - math::PI;
+	float absDelta = math::fabsf(delta);
 
-	if (math::fabsf(delta) <= speed) {
+	if (absDelta <= speed) {
+		if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+			uint32_t curBits, destBits, speedBits, deltaBits;
+			std::memcpy(&curBits, &cur, 4);
+			std::memcpy(&destBits, &dest, 4);
+			std::memcpy(&speedBits, &speed, 4);
+			std::memcpy(&deltaBits, &delta, 4);
+			fprintf(animTraceFile, "%d TURNTOWARD_DONE uid=%d cur=%.9g(0x%08x) dst=%.9g(0x%08x) spd=%.9g(0x%08x) delta=%.9g(0x%08x) absDelta=%.9g\n",
+				gs->frameNum, unit->id,
+				(double)cur, curBits, (double)dest, destBits,
+				(double)speed, speedBits, (double)delta, deltaBits,
+				(double)absDelta);
+			fflush(animTraceFile);
+		}
 		cur = dest;
 		return true;
 	}
 
-	cur = ClampRad(cur + speed * Sign(delta));
+	float newCur = ClampRad(cur + speed * Sign(delta));
+	if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+		uint32_t curBits, destBits, speedBits, deltaBits, newCurBits;
+		std::memcpy(&curBits, &cur, 4);
+		std::memcpy(&destBits, &dest, 4);
+		std::memcpy(&speedBits, &speed, 4);
+		std::memcpy(&deltaBits, &delta, 4);
+		std::memcpy(&newCurBits, &newCur, 4);
+		fprintf(animTraceFile, "%d TURNTOWARD uid=%d cur=%.9g(0x%08x) dst=%.9g(0x%08x) spd=%.9g(0x%08x) delta=%.9g(0x%08x) newcur=%.9g(0x%08x)\n",
+			gs->frameNum, unit->id,
+			(double)cur, curBits, (double)dest, destBits,
+			(double)speed, speedBits, (double)delta, deltaBits,
+			(double)newCur, newCurBits);
+	}
+	cur = newCur;
 	return false;
 }
 
@@ -354,8 +408,15 @@ bool CUnitScript::TickAnimFinished()
 	ZoneScoped;
 
 	// Tell listeners to unblock, and remove finished animations from the unit/script.
-	for (const auto& ai : doneAnims)
+	for (const auto& ai : doneAnims) {
+		if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+			fprintf(animTraceFile, "%d ANIMDONE uid=%d type=%d piece=%d axis=%d spd=%.9g dst=%.9g\n",
+				gs->frameNum, unit->id, (int)ai.animType, ai.piece, ai.axis,
+				(double)ai.speed, (double)ai.dest);
+			fflush(animTraceFile);
+		}
 		AnimFinished(ai.animType, ai.piece, ai.axis);
+	}
 
 	doneAnims.clear();
 
@@ -514,6 +575,13 @@ void CUnitScript::AddAnim(AnimType type, int piece, int axis, float speed, float
 	ai->speed = speed;
 	ai->accel = accel;
 	ai->done = false;
+
+	if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+		fprintf(animTraceFile, "%d ADDANIM uid=%d type=%d piece=%d axis=%d spd=%.9g dst=%.9g acc=%.9g\n",
+			gs->frameNum, unit->id, (int)type, piece, axis,
+			(double)speed, (double)destf, (double)accel);
+		fflush(animTraceFile);
+	}
 }
 
 
@@ -568,6 +636,14 @@ void CUnitScript::StopSpin(int piece, int axis, float decel)
 void CUnitScript::Turn(int piece, int axis, float speed, float destination)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+#ifdef SYNCCHECK
+	if (CSyncChecker::IsTracing() && unit) {
+		FILE* tf = CSyncChecker::GetTraceFile();
+		fprintf(tf, "%d TURN uid=%d piece=%d axis=%d spd=%.9g dst=%.9g\n",
+			CSyncChecker::GetFrameNum(), unit->id, piece, axis,
+			(double)speed, (double)destination);
+	}
+#endif
 	AddAnim(ATurn, piece, axis, math::fabs(speed), ClampRad(destination), 0);
 }
 
@@ -929,25 +1005,28 @@ bool CUnitScript::NeedsWait(AnimType type, int piece, int axis)
 	RECOIL_DETAILED_TRACY_ZONE;
 	auto animInfoIt = FindAnim(type, piece, axis);
 
-	if (animInfoIt == anims.end())
+	if (animInfoIt == anims.end()) {
+		if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+			fprintf(animTraceFile, "%d NEEDSWAIT uid=%d type=%d piece=%d axis=%d -> NOT_FOUND\n",
+				gs->frameNum, unit->id, (int)type, piece, axis);
+		}
 		return false;
+	}
 
 	AnimInfo& ai = *animInfoIt;
 
-	// if the animation is already finished, listening for
-	// it just adds some overhead since either the current
-	// or the next Tick will remove it and call UnblockAll
-	// (which calls AnimFinished for each listener)
-	//
-	// we could notify the listener here, but a cleaner way
-	// is to treat the animation as if it did not exist and
-	// simply disregard the WaitFor* (no side-effects)
-	//
-	// if (ai.hasWaiting)
-	// 		AnimFinished(ai.type, ai.piece, ai.axis);
-	if (ai.done)
+	if (ai.done) {
+		if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+			fprintf(animTraceFile, "%d NEEDSWAIT uid=%d type=%d piece=%d axis=%d -> ALREADY_DONE\n",
+				gs->frameNum, unit->id, (int)type, piece, axis);
+		}
 		return false;
+	}
 
+	if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+		fprintf(animTraceFile, "%d NEEDSWAIT uid=%d type=%d piece=%d axis=%d -> WAIT\n",
+			gs->frameNum, unit->id, (int)type, piece, axis);
+	}
 	return (ai.hasWaiting = true);
 }
 

@@ -36,6 +36,15 @@
 
 //constexpr float SAFE_INTERCEPT_EPS = (1.0 / 65536);
 
+// Debug: trace AimWeapon calls for specific unit near desync
+#include <cstdlib>
+static int aimTraceUid = -2; // -2 = uninitialized
+static void InitAimTrace() {
+	if (aimTraceUid != -2) return;
+	const char* uid = std::getenv("ANIM_TRACE_UID");
+	aimTraceUid = uid ? std::atoi(uid) : -1;
+}
+
 CR_BIND_DERIVED_POOL(CWeapon, CObject, , weaponMemPool.allocMem, weaponMemPool.freeMem)
 CR_REG_METADATA(CWeapon, (
 	CR_MEMBER(owner),
@@ -398,8 +407,14 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	// aim the weapon and defers setting angleGood to it) then this can
 	// lead to irregular/stuttering firing behavior, even in scenarios
 	// when the weapon does not have to re-aim
-	if (!CanCallAimingScript(angleGood &= CheckAimingAngle()))
+	if (!CanCallAimingScript(angleGood &= CheckAimingAngle())) {
+		InitAimTrace();
+		if (aimTraceUid >= 0 && owner->id == aimTraceUid && gs->frameNum >= 46850 && gs->frameNum <= 46880) {
+			fprintf(stderr, "%d AIMWEAPON_SKIP uid=%d wnum=%d angleGood=%d lastAimedFrame=%d reaimTime=%d\n",
+				gs->frameNum, owner->id, weaponNum, (int)angleGood, lastAimedFrame, reaimTime);
+		}
 		return false;
+	}
 
 	// if false, block further firing until AimWeapon has finished
 	angleGood &= !waitForAim;
@@ -413,7 +428,14 @@ bool CWeapon::CallAimingScript(bool waitForAim)
 	// for COB, this sets <angleGood> to AimWeapon's return value when finished
 	// for LUS, there exists a callout to set the <angleGood> member directly
 	// FIXME: convert CSolidObject::heading to radians too.
-	owner->script->AimWeapon(weaponNum, ClampRad(heading - owner->heading * TAANG2RAD), pitch);
+	const float aimH = ClampRad(heading - owner->heading * TAANG2RAD);
+	InitAimTrace();
+	if (aimTraceUid >= 0 && owner->id == aimTraceUid && gs->frameNum >= 46850 && gs->frameNum <= 46880) {
+		fprintf(stderr, "%d AIMWEAPON uid=%d wnum=%d heading=%.9g pitch=%.9g aimH=%.9g ownerHdg=%d\n",
+			gs->frameNum, owner->id, weaponNum,
+			(double)heading, (double)pitch, (double)aimH, (int)owner->heading);
+	}
+	owner->script->AimWeapon(weaponNum, aimH, pitch);
 	return true;
 }
 

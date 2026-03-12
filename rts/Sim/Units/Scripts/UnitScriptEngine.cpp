@@ -22,7 +22,10 @@
 #include "System/Sync/SyncChecker.h"
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #endif
+
+#include "Sim/Misc/GlobalSynced.h"
 
 CONFIG(bool, AnimationMT).deprecated(true);
 
@@ -134,7 +137,39 @@ void CUnitScriptEngine::Tick(int deltaTime)
 {
 	SCOPED_TIMER("CUnitScriptEngine::Tick");
 
+#ifdef SYNCCHECK
+	// Sub-phase detail logging for ScriptTick
+	static FILE* scriptDetailFile = nullptr;
+	static int scriptDetailStart = 0;
+	static int scriptDetailEnd = INT_MAX;
+	static bool scriptDetailInit = false;
+	if (!scriptDetailInit) {
+		scriptDetailInit = true;
+		const char* path = std::getenv("SYNC_DETAIL_PATH");
+		if (path) {
+			// We'll write to a separate file for script sub-phases
+			std::string subPath = std::string(path) + ".script";
+			scriptDetailFile = fopen(subPath.c_str(), "w");
+		}
+		const char* s = std::getenv("SYNC_DETAIL_START");
+		if (s) scriptDetailStart = std::atoi(s);
+		const char* e = std::getenv("SYNC_DETAIL_END");
+		if (e) scriptDetailEnd = std::atoi(e);
+	}
+	const bool doScriptDetail = scriptDetailFile &&
+		gs->frameNum >= scriptDetailStart && gs->frameNum <= scriptDetailEnd;
+	#define SCRIPT_DETAIL(label) \
+		if (doScriptDetail) { \
+			fprintf(scriptDetailFile, "%d %s %08x\n", gs->frameNum, label, CSyncChecker::GetChecksum()); \
+			fflush(scriptDetailFile); \
+		}
+#else
+	#define SCRIPT_DETAIL(label)
+#endif
+
+	SCRIPT_DETAIL("PreCobTick")
 	cobEngine->Tick(deltaTime);
+	SCRIPT_DETAIL("PostCobTick")
 
 	// tick all (COB or LUS) script instances that have registered themselves as animating
 	{
@@ -145,6 +180,7 @@ void CUnitScriptEngine::Tick(int deltaTime)
 			animating[i]->TickAllAnims(deltaTime);
 		});
 	}
+	SCRIPT_DETAIL("PostTickAllAnims")
 	{
 		ZoneScopedN("CUnitScriptEngine::Tick(ST)");
 
@@ -170,6 +206,16 @@ void CUnitScriptEngine::Tick(int deltaTime)
 					(u && u->unitDef) ? u->unitDef->name.c_str() : "?",
 					scriptChk, prevCs, cs);
 			}
+
+			// Log per-unit script checksum to script detail file
+			if (doScriptDetail) {
+				CUnit* u = currentScript->GetUnit();
+				fprintf(scriptDetailFile, "%d ANIM uid=%d def=%s chk=%08x cs=%08x->%08x\n",
+					gs->frameNum,
+					u ? u->id : -1,
+					(u && u->unitDef) ? u->unitDef->name.c_str() : "?",
+					scriptChk, prevCs, cs);
+			}
 #endif
 
 			if (!currentScript->TickAnimFinished()) {
@@ -183,6 +229,10 @@ void CUnitScriptEngine::Tick(int deltaTime)
 		currentScript = nullptr;
 		Sync::Assert(cs, "animating");
 	}
+	SCRIPT_DETAIL("PostAnimCheck")
 
 	cobEngine->RunDeferredCallins();
+	SCRIPT_DETAIL("PostDeferredCallins")
+
+#undef SCRIPT_DETAIL
 }

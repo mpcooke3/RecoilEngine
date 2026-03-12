@@ -269,6 +269,59 @@ void CGameHelper::DamageObjectsInExplosionRadius(
 	const unsigned int newNumUnits = unitCache.size();
 	const unsigned int newNumFeatures = featureCache.size();
 
+#ifdef SYNCCHECK
+	{
+		static FILE* expTraceFile = nullptr;
+		static int expTraceStart = 0;
+		static int expTraceEnd = INT_MAX;
+		static int expTraceUid = -1;
+		static bool expTraceInit = false;
+		if (!expTraceInit) {
+			expTraceInit = true;
+			const char* p = std::getenv("DMG_TRACE_PATH");
+			if (p) {
+				std::string subPath = std::string(p) + ".explosion";
+				expTraceFile = fopen(subPath.c_str(), "w");
+			}
+			const char* u = std::getenv("DMG_TRACE_UID");
+			if (u) expTraceUid = std::atoi(u);
+			const char* s = std::getenv("DMG_TRACE_START");
+			if (s) expTraceStart = std::atoi(s);
+			const char* e = std::getenv("DMG_TRACE_END");
+			if (e) expTraceEnd = std::atoi(e);
+		}
+		if (expTraceFile && gs->frameNum >= expTraceStart && gs->frameNum <= expTraceEnd) {
+			// Check if target UID is in the unit cache
+			bool hasTarget = false;
+			if (expTraceUid >= 0) {
+				for (unsigned int n = oldNumUnits; n < newNumUnits; n++) {
+					if (unitCache[n]->id == expTraceUid) { hasTarget = true; break; }
+				}
+			}
+			// Log if target is found, OR if explosion is near target's known position
+			float dx = params.pos.x - 11765.554f;
+			float dz = params.pos.z - 9414.791f;
+			float distSq = dx*dx + dz*dz;
+			if (hasTarget || distSq < 10000.0f) {
+				fprintf(expTraceFile, "%d EXPLOSION pos=(%.1f,%.1f,%.1f) rad=%.1f nUnits=%u hasUid%d=%s proj=%d wdef=%d",
+					gs->frameNum, params.pos.x, params.pos.y, params.pos.z,
+					expRad, newNumUnits - oldNumUnits,
+					expTraceUid, hasTarget ? "YES" : "NO",
+					params.projectileID, weaponDefID);
+				if (!hasTarget && expTraceUid >= 0) {
+					// List all unit IDs found
+					fprintf(expTraceFile, " units=[");
+					for (unsigned int n = oldNumUnits; n < newNumUnits && n < oldNumUnits + 10; n++)
+						fprintf(expTraceFile, "%d,", unitCache[n]->id);
+					fprintf(expTraceFile, "]");
+				}
+				fprintf(expTraceFile, "\n");
+				fflush(expTraceFile);
+			}
+		}
+	}
+#endif
+
 	// damage all units within the explosion radius
 	// NOTE:
 	//   this can recursively trigger ::Explosion() again

@@ -2,16 +2,10 @@
 
 #include <cstdio>
 
-// Diagnostic wrapper: uses defined-behavior cast (float->int->short) which wraps
-// on both ARM64 and x86_64. Logs when out-of-range values are encountered.
-// NOTE: stock code uses UB short(float) which may behave differently per platform.
-static inline short FloatToShortWrap(float v, const char* caller = nullptr) {
-	short result = static_cast<short>(static_cast<int>(v));
-	if ((v > 32767.0f || v < -32768.0f) && caller) {
-		fprintf(stderr, "[COB_CAST] %s: %.1f -> short=%d (int=%d)\n",
-			caller, v, (int)result, static_cast<int>(v));
-	}
-	return result;
+// Defined-behavior cast (float->int->short) which wraps on both ARM64 and x86_64.
+// Stock code uses UB short(float) which may behave differently per platform.
+static inline short FloatToShortWrap(float v) {
+	return static_cast<short>(static_cast<int>(v));
 }
 
 #include "CobEngine.h"
@@ -251,7 +245,7 @@ void CCobInstance::WindChanged(float heading, float speed)
 {
 	ZoneScoped;
 	Call(COBFN_SetSpeed, int(speed * 3000.0f));
-	Call(COBFN_SetDirection, FloatToShortWrap(heading * RAD2TAANG, "WindChanged"));
+	Call(COBFN_SetDirection, FloatToShortWrap(heading * RAD2TAANG));
 }
 
 
@@ -401,8 +395,8 @@ void CCobInstance::StartBuilding(float heading, float pitch)
 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
 
 	callinArgs[0] = 2;
-	callinArgs[1] = FloatToShortWrap(heading * RAD2TAANG, "StartBuilding:heading");
-	callinArgs[2] = FloatToShortWrap(  pitch * RAD2TAANG, "StartBuilding:pitch");
+	callinArgs[1] = FloatToShortWrap(heading * RAD2TAANG);
+	callinArgs[2] = FloatToShortWrap(  pitch * RAD2TAANG);
 
 	Call(COBFN_StartBuilding, callinArgs);
 }
@@ -453,8 +447,8 @@ void CCobInstance::AimWeapon(int weaponNum, float heading, float pitch)
 	std::array<int, 1 + MAX_COB_ARGS> callinArgs;
 
 	callinArgs[0] = 2;
-	callinArgs[1] = FloatToShortWrap(heading * RAD2TAANG, "AimWeapon:heading");
-	callinArgs[2] = FloatToShortWrap(  pitch * RAD2TAANG, "AimWeapon:pitch");
+	callinArgs[1] = FloatToShortWrap(heading * RAD2TAANG);
+	callinArgs[2] = FloatToShortWrap(  pitch * RAD2TAANG);
 
 	Call(COBFN_AimPrimary + COBFN_Weapon_Funcs * weaponNum, callinArgs, CBAimWeapon, weaponNum, nullptr);
 }
@@ -565,22 +559,6 @@ int CCobInstance::RealCall(int functionId, std::array<int, 1 + MAX_COB_ARGS>& ar
 {
 	RECOIL_DETAILED_TRACY_ZONE;
 	int ret = -1;
-
-	// Debug: trace all COB callins for specific unit
-	{
-		static int cobTraceUid = -2;
-		if (cobTraceUid == -2) {
-			const char* uid = std::getenv("ANIM_TRACE_UID");
-			cobTraceUid = uid ? std::atoi(uid) : -1;
-		}
-		if (cobTraceUid >= 0 && unit && unit->id == cobTraceUid && gs->frameNum >= 46850 && gs->frameNum <= 46880) {
-			const char* fname = (size_t(functionId) < cobFile->scriptNames.size()) ?
-				cobFile->scriptNames[functionId].c_str() : "INVALID";
-			fprintf(stderr, "%d COBCALL uid=%d func=%s(%d) nargs=%d args=[%d,%d,%d,%d] cb=%d\n",
-				gs->frameNum, unit->id, fname, functionId,
-				args[0], args[1], args[2], args[3], args[4], (int)cb);
-		}
-	}
 
 	if (size_t(functionId) >= cobFile->scriptNames.size()) {
 		if (retCode != nullptr)

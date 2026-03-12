@@ -22,6 +22,7 @@ static inline short FloatToShortWrap(float v, const char* caller = nullptr) {
 
 #include "Game/GameHelper.h"
 #include "Game/GlobalUnsynced.h"
+#include "Sim/Misc/GlobalSynced.h"
 #include "Map/Ground.h"
 #include "Sim/Misc/GroundBlockingObjectMap.h"
 #include "Sim/Misc/TeamHandler.h"
@@ -564,6 +565,22 @@ int CCobInstance::RealCall(int functionId, std::array<int, 1 + MAX_COB_ARGS>& ar
 {
 	RECOIL_DETAILED_TRACY_ZONE;
 	int ret = -1;
+
+	// Debug: trace all COB callins for specific unit
+	{
+		static int cobTraceUid = -2;
+		if (cobTraceUid == -2) {
+			const char* uid = std::getenv("ANIM_TRACE_UID");
+			cobTraceUid = uid ? std::atoi(uid) : -1;
+		}
+		if (cobTraceUid >= 0 && unit && unit->id == cobTraceUid && gs->frameNum >= 46850 && gs->frameNum <= 46880) {
+			const char* fname = (size_t(functionId) < cobFile->scriptNames.size()) ?
+				cobFile->scriptNames[functionId].c_str() : "INVALID";
+			fprintf(stderr, "%d COBCALL uid=%d func=%s(%d) nargs=%d args=[%d,%d,%d,%d] cb=%d\n",
+				gs->frameNum, unit->id, fname, functionId,
+				args[0], args[1], args[2], args[3], args[4], (int)cb);
+		}
+	}
 
 	if (size_t(functionId) >= cobFile->scriptNames.size()) {
 		if (retCode != nullptr)

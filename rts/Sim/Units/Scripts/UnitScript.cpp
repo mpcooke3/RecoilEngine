@@ -176,7 +176,7 @@ bool CUnitScript::TurnToward(float& cur, float dest, float speed)
 	float absDelta = math::fabsf(delta);
 
 	if (absDelta <= speed) {
-		if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+		if (unit && ShouldTraceUnit(unit->id)) {
 			uint32_t curBits, destBits, speedBits, deltaBits;
 			std::memcpy(&curBits, &cur, 4);
 			std::memcpy(&destBits, &dest, 4);
@@ -194,7 +194,7 @@ bool CUnitScript::TurnToward(float& cur, float dest, float speed)
 	}
 
 	float newCur = ClampRad(cur + speed * Sign(delta));
-	if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+	if (unit && ShouldTraceUnit(unit->id)) {
 		uint32_t curBits, destBits, speedBits, deltaBits, newCurBits;
 		std::memcpy(&curBits, &cur, 4);
 		std::memcpy(&destBits, &dest, 4);
@@ -409,7 +409,7 @@ bool CUnitScript::TickAnimFinished()
 
 	// Tell listeners to unblock, and remove finished animations from the unit/script.
 	for (const auto& ai : doneAnims) {
-		if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+		if (unit && ShouldTraceUnit(unit->id)) {
 			fprintf(animTraceFile, "%d ANIMDONE uid=%d type=%d piece=%d axis=%d spd=%.9g dst=%.9g\n",
 				gs->frameNum, unit->id, (int)ai.animType, ai.piece, ai.axis,
 				(double)ai.speed, (double)ai.dest);
@@ -576,7 +576,7 @@ void CUnitScript::AddAnim(AnimType type, int piece, int axis, float speed, float
 	ai->accel = accel;
 	ai->done = false;
 
-	if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+	if (unit && ShouldTraceUnit(unit->id)) {
 		fprintf(animTraceFile, "%d ADDANIM uid=%d type=%d piece=%d axis=%d spd=%.9g dst=%.9g acc=%.9g\n",
 			gs->frameNum, unit->id, (int)type, piece, axis,
 			(double)speed, (double)destf, (double)accel);
@@ -1006,7 +1006,7 @@ bool CUnitScript::NeedsWait(AnimType type, int piece, int axis)
 	auto animInfoIt = FindAnim(type, piece, axis);
 
 	if (animInfoIt == anims.end()) {
-		if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+		if (unit && ShouldTraceUnit(unit->id)) {
 			fprintf(animTraceFile, "%d NEEDSWAIT uid=%d type=%d piece=%d axis=%d -> NOT_FOUND\n",
 				gs->frameNum, unit->id, (int)type, piece, axis);
 		}
@@ -1016,14 +1016,14 @@ bool CUnitScript::NeedsWait(AnimType type, int piece, int axis)
 	AnimInfo& ai = *animInfoIt;
 
 	if (ai.done) {
-		if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+		if (unit && ShouldTraceUnit(unit->id)) {
 			fprintf(animTraceFile, "%d NEEDSWAIT uid=%d type=%d piece=%d axis=%d -> ALREADY_DONE\n",
 				gs->frameNum, unit->id, (int)type, piece, axis);
 		}
 		return false;
 	}
 
-	if (animTraceFile && unit && ShouldTraceUnit(unit->id)) {
+	if (unit && ShouldTraceUnit(unit->id)) {
 		fprintf(animTraceFile, "%d NEEDSWAIT uid=%d type=%d piece=%d axis=%d -> WAIT\n",
 			gs->frameNum, unit->id, (int)type, piece, axis);
 	}

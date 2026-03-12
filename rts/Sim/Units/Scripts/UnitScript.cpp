@@ -54,6 +54,7 @@
 #include "System/Sync/SyncChecker.h"
 #include <cstdio>
 #include <cstring>
+#include <string>
 #endif
 
 #endif
@@ -224,28 +225,43 @@ void CUnitScript::TickAllAnims(int deltaTime)
 		}
 
 		// checksum all anims (live + done)
-#ifdef SYNCCHECK
-		uint32_t prevChk = checksum;
-#endif
 		checksum = spring::LiteHash(ai, checksum);
-#ifdef SYNCCHECK
-		if (CSyncChecker::IsTracing() && unit) {
-			FILE* tf = CSyncChecker::GetTraceFile();
-			uint8_t raw[sizeof(AnimInfo)];
-			std::memcpy(raw, &ai, sizeof(AnimInfo));
-			fprintf(tf, "%d ANIM uid=%d t=%d p=%d a=%d spd=%.9g dst=%.9g acc=%.9g d=%d hw=%d chk=%08x->%08x raw=",
-				CSyncChecker::GetFrameNum(), unit->id,
-				(int)ai.animType, ai.piece, ai.axis,
-				(double)ai.speed, (double)ai.dest, (double)ai.accel,
-				(int)ai.done, (int)ai.hasWaiting,
-				prevChk, checksum);
-			for (unsigned b = 0; b < sizeof(AnimInfo); b++)
-				fprintf(tf, "%02x", raw[b]);
-			fprintf(tf, "\n");
-		}
-#endif
 	}
 
+#ifdef SYNCCHECK
+	if (CSyncChecker::IsTracing() && unit) {
+		// Build per-anim log buffer, then write atomically to avoid MT interleaving
+		std::string buf;
+		buf.reserve(anims.size() * 200);
+		char line[512];
+		// Re-iterate and hash to show per-anim checksums (checksum was already final)
+		uint32_t reChk = checksum; // We need the initial value before the loop above
+		// Actually, re-compute from scratch to show per-step values
+		// The checksum before the loop was the accumulated value from previous frames
+		// We can't easily recover that, but we can log the raw bytes for comparison
+		int frame = CSyncChecker::GetFrameNum();
+		int uid = unit->id;
+		for (size_t ai_idx = 0; ai_idx < anims.size(); ai_idx++) {
+			const auto& ai = anims[ai_idx];
+			uint8_t raw[sizeof(AnimInfo)];
+			std::memcpy(raw, &ai, sizeof(AnimInfo));
+			int n = snprintf(line, sizeof(line),
+				"%d ANIM uid=%d t=%d p=%d a=%d spd=%.9g dst=%.9g acc=%.9g d=%d hw=%d raw=",
+				frame, uid,
+				(int)ai.animType, ai.piece, ai.axis,
+				(double)ai.speed, (double)ai.dest, (double)ai.accel,
+				(int)ai.done, (int)ai.hasWaiting);
+			buf.append(line, n);
+			for (unsigned b = 0; b < sizeof(AnimInfo); b++) {
+				snprintf(line, sizeof(line), "%02x", raw[b]);
+				buf.append(line, 2);
+			}
+			buf.push_back('\n');
+		}
+		FILE* tf = CSyncChecker::GetTraceFile();
+		fwrite(buf.data(), 1, buf.size(), tf);
+	}
+#endif
 	spring::VectorEraseIfAll(anims, [](const auto& ai) { return ai.done; });
 #if 1
 	// BFS pass

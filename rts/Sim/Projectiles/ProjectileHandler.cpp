@@ -202,6 +202,46 @@ void CProjectileHandler::UpdateProjectilesImpl()
 			p->Update();
 			ASSERT_SYNCED(p->pos);
 			ASSERT_SYNCED(p->speed);
+
+#ifdef SYNCCHECK
+			// Log wdef projectile positions after Update
+			{
+				static FILE* projTraceFile = nullptr;
+				static int projTraceStart = 0;
+				static int projTraceEnd = INT_MAX;
+				static int projTraceWdef = -1;
+				static bool projTraceInit = false;
+				if (!projTraceInit) {
+					projTraceInit = true;
+					const char* path = std::getenv("DMG_TRACE_PATH");
+					if (path) {
+						std::string subPath = std::string(path) + ".proj";
+						projTraceFile = fopen(subPath.c_str(), "w");
+					}
+					const char* s = std::getenv("DMG_TRACE_START");
+					if (s) projTraceStart = std::atoi(s);
+					const char* e = std::getenv("DMG_TRACE_END");
+					if (e) projTraceEnd = std::atoi(e);
+					const char* w = std::getenv("DMG_TRACE_WDEF");
+					if (w) projTraceWdef = std::atoi(w);
+				}
+				if (projTraceFile && p->weapon &&
+				    gs->frameNum >= projTraceStart && gs->frameNum <= projTraceEnd &&
+				    projTraceWdef >= 0) {
+					const CWeaponProjectile* wp = static_cast<const CWeaponProjectile*>(p);
+					if (wp->GetWeaponDef() && wp->GetWeaponDef()->id == projTraceWdef) {
+						float gy = CGround::GetHeightReal(p->pos.x, p->pos.z);
+						fprintf(projTraceFile, "%d PROJ id=%d pos=(%.3f,%.3f,%.3f) spd=(%.3f,%.3f,%.3f,%.3f) gy=%.3f checkCol=%d deleteMe=%d\n",
+							gs->frameNum, p->id,
+							p->pos.x, p->pos.y, p->pos.z,
+							p->speed.x, p->speed.y, p->speed.z, p->speed.w,
+							gy, (int)p->checkCol, (int)p->deleteMe);
+						fflush(projTraceFile);
+					}
+				}
+			}
+#endif
+
 			quadField.MovedProjectile(p);
 
 			MAPPOS_SANITY_CHECK(p->pos);

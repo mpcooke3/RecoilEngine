@@ -622,6 +622,43 @@ void CProjectileHandler::CheckGroundCollisions(bool synced)
 		const bool belowGround = (py < gy);
 		const bool insideWater = (py <= CGround::GetWaterLevel(px, pz));
 
+#ifdef SYNCCHECK
+		// Log ground collision check for projectiles near the target area
+		{
+			static FILE* gndTraceFile = nullptr;
+			static int gndTraceStart = 0;
+			static int gndTraceEnd = INT_MAX;
+			static int gndTraceWdef = -1;
+			static bool gndTraceInit = false;
+			if (!gndTraceInit) {
+				gndTraceInit = true;
+				const char* path = std::getenv("DMG_TRACE_PATH");
+				if (path) {
+					std::string subPath = std::string(path) + ".ground";
+					gndTraceFile = fopen(subPath.c_str(), "w");
+				}
+				const char* s = std::getenv("DMG_TRACE_START");
+				if (s) gndTraceStart = std::atoi(s);
+				const char* e = std::getenv("DMG_TRACE_END");
+				if (e) gndTraceEnd = std::atoi(e);
+				const char* w = std::getenv("DMG_TRACE_WDEF");
+				if (w) gndTraceWdef = std::atoi(w);
+			}
+			if (gndTraceFile && synced &&
+			    gs->frameNum >= gndTraceStart && gs->frameNum <= gndTraceEnd &&
+			    gndTraceWdef >= 0 && p->weapon) {
+				const CWeaponProjectile* wp = static_cast<const CWeaponProjectile*>(p);
+				if (wp->GetWeaponDef() && wp->GetWeaponDef()->id == gndTraceWdef) {
+					fprintf(gndTraceFile, "%d GNDCHK id=%d pos=(%.3f,%.3f,%.3f) gy=%.3f below=%d water=%d\n",
+						gs->frameNum, p->id,
+						px, py, pz, gy,
+						(int)belowGround, (int)insideWater);
+					fflush(gndTraceFile);
+				}
+			}
+		}
+#endif
+
 		if (!belowGround && (!insideWater || p->ignoreWater))
 			continue;
 

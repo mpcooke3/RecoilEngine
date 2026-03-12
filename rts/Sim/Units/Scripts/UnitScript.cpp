@@ -96,6 +96,19 @@ static bool ShouldTraceUnit(int uid, int frame) {
 
 #endif
 
+// Portable float-to-int that avoids undefined behavior for NaN/Inf/overflow.
+// static_cast<int>(float) is UB when the float is NaN, infinity, or outside
+// the representable range of int. On x86 CVTTSS2SI returns 0x80000000
+// (INT_MIN) for all such cases; on ARM64 FCVTZS returns 0 for NaN and
+// saturates to INT_MAX/INT_MIN for overflow — causing cross-platform desync.
+// This clamps exceptional values to a well-defined result.
+static inline int FloatToIntSafe(float v) {
+	if (std::isnan(v)) return 0;
+	if (v >= 2147483648.0f) return INT_MAX;
+	if (v < -2147483648.0f) return INT_MIN;
+	return static_cast<int>(v);
+}
+
 CR_BIND_INTERFACE(CUnitScript)
 
 CR_REG_METADATA(CUnitScript, (
@@ -1296,7 +1309,7 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 	case UPRIGHT:
 		return !!unit->upright;
 	case POW:
-		return int(math::pow((p1 * 1.0f) / COBSCALE, (p2 * 1.0f) / COBSCALE) * COBSCALE);
+		return FloatToIntSafe(math::pow((p1 * 1.0f) / COBSCALE, (p2 * 1.0f) / COBSCALE) * COBSCALE);
 	case PRINT: {
 		const char*   unitName = unit->unitDef->name.c_str();
 		const char* scriptName = unit->unitDef->scriptName.c_str();
@@ -1495,13 +1508,13 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 	case ABS:
 		return std::abs(p1);
 	case KSIN:
-		return int(1024*math::sinf(TAANG2RAD*(float)p1));
+		return FloatToIntSafe(1024*math::sinf(TAANG2RAD*(float)p1));
 	case KCOS:
-		return int(1024*math::cosf(TAANG2RAD*(float)p1));
+		return FloatToIntSafe(1024*math::cosf(TAANG2RAD*(float)p1));
 	case KTAN:
-		return int(1024*math::tanf(TAANG2RAD*(float)p1));
+		return FloatToIntSafe(1024*math::tanf(TAANG2RAD*(float)p1));
 	case SQRT:
-		return int(math::sqrt((float)p1));
+		return FloatToIntSafe(math::sqrt((float)p1));
 
 	case FLANK_B_MODE:
 		return unit->flankingBonusMode;

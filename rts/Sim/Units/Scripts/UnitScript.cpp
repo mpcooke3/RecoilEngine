@@ -58,9 +58,13 @@
 #endif
 
 // Animation trace file for debugging cross-platform desync
-// Set ANIM_TRACE_PATH env var to enable, ANIM_TRACE_UID to filter by unit ID
+// Set ANIM_TRACE_PATH env var to enable
+// ANIM_TRACE_UID: filter by unit ID (-1 or unset = all)
+// ANIM_TRACE_START/END: frame range filter
 static FILE* animTraceFile = nullptr;
 static int animTraceUid = -1;
+static int animTraceStart = 0;
+static int animTraceEnd = INT_MAX;
 static bool animTraceInit = false;
 
 static void InitAnimTrace() {
@@ -72,15 +76,22 @@ static void InitAnimTrace() {
 		if (animTraceFile) {
 			const char* uid = std::getenv("ANIM_TRACE_UID");
 			if (uid) animTraceUid = std::atoi(uid);
-			fprintf(animTraceFile, "# AnimTrace uid_filter=%d\n", animTraceUid);
+			const char* s = std::getenv("ANIM_TRACE_START");
+			if (s) animTraceStart = std::atoi(s);
+			const char* e = std::getenv("ANIM_TRACE_END");
+			if (e) animTraceEnd = std::atoi(e);
+			fprintf(animTraceFile, "# AnimTrace uid=%d frames=%d-%d\n",
+				animTraceUid, animTraceStart, animTraceEnd);
 			fflush(animTraceFile);
 		}
 	}
 }
 
-static bool ShouldTraceUnit(int uid) {
+static bool ShouldTraceUnit(int uid, int frame) {
 	InitAnimTrace();
-	return animTraceFile && (animTraceUid < 0 || animTraceUid == uid);
+	if (!animTraceFile) return false;
+	if (frame < animTraceStart || frame > animTraceEnd) return false;
+	return (animTraceUid < 0 || animTraceUid == uid);
 }
 
 #endif
@@ -176,7 +187,7 @@ bool CUnitScript::TurnToward(float& cur, float dest, float speed)
 	float absDelta = math::fabsf(delta);
 
 	if (absDelta <= speed) {
-		if (unit && ShouldTraceUnit(unit->id)) {
+		if (unit && ShouldTraceUnit(unit->id, gs->frameNum)) {
 			uint32_t curBits, destBits, speedBits, deltaBits;
 			std::memcpy(&curBits, &cur, 4);
 			std::memcpy(&destBits, &dest, 4);
@@ -194,7 +205,7 @@ bool CUnitScript::TurnToward(float& cur, float dest, float speed)
 	}
 
 	float newCur = ClampRad(cur + speed * Sign(delta));
-	if (unit && ShouldTraceUnit(unit->id)) {
+	if (unit && ShouldTraceUnit(unit->id, gs->frameNum)) {
 		uint32_t curBits, destBits, speedBits, deltaBits, newCurBits;
 		std::memcpy(&curBits, &cur, 4);
 		std::memcpy(&destBits, &dest, 4);
@@ -409,7 +420,7 @@ bool CUnitScript::TickAnimFinished()
 
 	// Tell listeners to unblock, and remove finished animations from the unit/script.
 	for (const auto& ai : doneAnims) {
-		if (unit && ShouldTraceUnit(unit->id)) {
+		if (unit && ShouldTraceUnit(unit->id, gs->frameNum)) {
 			fprintf(animTraceFile, "%d ANIMDONE uid=%d type=%d piece=%d axis=%d spd=%.9g dst=%.9g\n",
 				gs->frameNum, unit->id, (int)ai.animType, ai.piece, ai.axis,
 				(double)ai.speed, (double)ai.dest);
@@ -576,7 +587,7 @@ void CUnitScript::AddAnim(AnimType type, int piece, int axis, float speed, float
 	ai->accel = accel;
 	ai->done = false;
 
-	if (unit && ShouldTraceUnit(unit->id)) {
+	if (unit && ShouldTraceUnit(unit->id, gs->frameNum)) {
 		fprintf(animTraceFile, "%d ADDANIM uid=%d type=%d piece=%d axis=%d spd=%.9g dst=%.9g acc=%.9g\n",
 			gs->frameNum, unit->id, (int)type, piece, axis,
 			(double)speed, (double)destf, (double)accel);
@@ -1006,7 +1017,7 @@ bool CUnitScript::NeedsWait(AnimType type, int piece, int axis)
 	auto animInfoIt = FindAnim(type, piece, axis);
 
 	if (animInfoIt == anims.end()) {
-		if (unit && ShouldTraceUnit(unit->id)) {
+		if (unit && ShouldTraceUnit(unit->id, gs->frameNum)) {
 			fprintf(animTraceFile, "%d NEEDSWAIT uid=%d type=%d piece=%d axis=%d -> NOT_FOUND\n",
 				gs->frameNum, unit->id, (int)type, piece, axis);
 		}
@@ -1016,14 +1027,14 @@ bool CUnitScript::NeedsWait(AnimType type, int piece, int axis)
 	AnimInfo& ai = *animInfoIt;
 
 	if (ai.done) {
-		if (unit && ShouldTraceUnit(unit->id)) {
+		if (unit && ShouldTraceUnit(unit->id, gs->frameNum)) {
 			fprintf(animTraceFile, "%d NEEDSWAIT uid=%d type=%d piece=%d axis=%d -> ALREADY_DONE\n",
 				gs->frameNum, unit->id, (int)type, piece, axis);
 		}
 		return false;
 	}
 
-	if (unit && ShouldTraceUnit(unit->id)) {
+	if (unit && ShouldTraceUnit(unit->id, gs->frameNum)) {
 		fprintf(animTraceFile, "%d NEEDSWAIT uid=%d type=%d piece=%d axis=%d -> WAIT\n",
 			gs->frameNum, unit->id, (int)type, piece, axis);
 	}

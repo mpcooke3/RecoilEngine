@@ -200,6 +200,8 @@ void CProjectileHandler::UpdateProjectilesImpl()
 			MAPPOS_SANITY_CHECK(p->pos);
 			p->PreUpdate();
 			p->Update();
+			ASSERT_SYNCED(p->pos);
+			ASSERT_SYNCED(p->speed);
 			quadField.MovedProjectile(p);
 
 			MAPPOS_SANITY_CHECK(p->pos);

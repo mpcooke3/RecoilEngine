@@ -290,6 +290,13 @@ void CGameHelper::DamageObjectsInExplosionRadius(
 			const char* e = std::getenv("DMG_TRACE_END");
 			if (e) expTraceEnd = std::atoi(e);
 		}
+		static int expTraceWdef = -1;
+		static bool expTraceWdefInit = false;
+		if (!expTraceWdefInit) {
+			expTraceWdefInit = true;
+			const char* w = std::getenv("DMG_TRACE_WDEF");
+			if (w) expTraceWdef = std::atoi(w);
+		}
 		if (expTraceFile && gs->frameNum >= expTraceStart && gs->frameNum <= expTraceEnd) {
 			// Check if target UID is in the unit cache
 			bool hasTarget = false;
@@ -298,11 +305,12 @@ void CGameHelper::DamageObjectsInExplosionRadius(
 					if (unitCache[n]->id == expTraceUid) { hasTarget = true; break; }
 				}
 			}
-			// Log if target is found, OR if explosion is near target's known position
+			// Log if: matching wdef, or target found, or near target's known position
+			bool wdefMatch = (expTraceWdef >= 0 && weaponDefID == expTraceWdef);
 			float dx = params.pos.x - 11765.554f;
 			float dz = params.pos.z - 9414.791f;
 			float distSq = dx*dx + dz*dz;
-			if (hasTarget || distSq < 10000.0f) {
+			if (hasTarget || distSq < 10000.0f || wdefMatch) {
 				fprintf(expTraceFile, "%d EXPLOSION pos=(%.1f,%.1f,%.1f) rad=%.1f nUnits=%u hasUid%d=%s proj=%d wdef=%d",
 					gs->frameNum, params.pos.x, params.pos.y, params.pos.z,
 					expRad, newNumUnits - oldNumUnits,

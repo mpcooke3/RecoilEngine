@@ -206,6 +206,34 @@ void CUnitScript::TickAllAnims(int deltaTime)
 {
 	ZoneScoped;
 
+#ifdef SYNCCHECK
+	if (CSyncChecker::IsTracing() && unit) {
+		// Dump all piece rotations/positions at start of tick (before processing)
+		std::string buf;
+		buf.reserve(pieces.size() * 128);
+		char line[256];
+		int frame = CSyncChecker::GetFrameNum();
+		int uid = unit->id;
+		for (size_t pi = 0; pi < pieces.size(); pi++) {
+			if (!pieces[pi]) continue;
+			float3 rot = pieces[pi]->GetRotation();
+			float3 pos = pieces[pi]->GetPosition();
+			uint32_t rx, ry, rz;
+			std::memcpy(&rx, &rot.x, 4);
+			std::memcpy(&ry, &rot.y, 4);
+			std::memcpy(&rz, &rot.z, 4);
+			int n = snprintf(line, sizeof(line),
+				"%d PIECE uid=%d p=%d rot=%.9g,%.9g,%.9g (0x%08x,%08x,%08x) pos=%.9g,%.9g,%.9g\n",
+				frame, uid, (int)pi,
+				(double)rot.x, (double)rot.y, (double)rot.z, rx, ry, rz,
+				(double)pos.x, (double)pos.y, (double)pos.z);
+			buf.append(line, n);
+		}
+		FILE* tf = CSyncChecker::GetTraceFile();
+		fwrite(buf.data(), 1, buf.size(), tf);
+	}
+#endif
+
 	// optimize the memory access patterns of the procedure below
 	std::sort(anims.begin(), anims.end(), [](const auto& lhs, const auto& rhs) {
 		return std::tie(lhs.piece, lhs.animType, lhs.axis) < std::tie(rhs.piece, rhs.animType, rhs.axis);

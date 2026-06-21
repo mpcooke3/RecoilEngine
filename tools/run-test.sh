@@ -29,6 +29,17 @@ for w in "$SRC_WIDGETS"/*.lua; do
     [ -f "$w" ] && cp -f "$w" "$WIDGETS_DIR/"
 done
 
+# Sync tracked BAR-content overrides (CUS shader patch, etc.) into the writepath.
+# VFS.LoadFile is RAW_FIRST in widget/gadget context, so files in the writepath
+# take precedence over BAR's archive copies.
+if [ -d "$BAR_DIR/tools/content" ]; then
+    (cd "$BAR_DIR/tools/content" && find . -type f | while read -r f; do
+        dest="$BAR_DIR/build/${f#./}"
+        mkdir -p "$(dirname "$dest")"
+        cp -f "$BAR_DIR/tools/content/${f#./}" "$dest"
+    done)
+fi
+
 case "$TEST" in
     scorch)
         WIDGET_NAME="Auto Screenshot (mac debug)"

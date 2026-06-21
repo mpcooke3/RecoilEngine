@@ -483,17 +483,44 @@ keep all visuals identical without solving the actual KK behaviour.
 
 **Real-fix investigation plan** (not blocking; for someone who can
 afford the time):
-1. Capture an apitrace of both Mac and Linux running the same skirmish
-   moment, diff the draw calls in the alpha pass for the scorch
-   timestamp.
-2. If draw counts differ, find why (BAR widget, engine path, particle
+
+1. **Update Mesa/KK.** Mesa 26.1 (2026-05-06) and main since then have
+   multiple Aitor Camacho KK fixes that overlap this area, in particular
+   "Force frag output component count to match render targets" and a
+   migration to Metal 4 pipelines. The local `~/mesa-native/` install
+   was built from the `lucamignatti/mesa` fork at commit `919e1d923bd`
+   (2026-01-02), well before any of those fixes. Rebuild Mesa from
+   current upstream main + lucamignatti's macOS bootstrap commits
+   and re-test before chasing engine-side root causes.
+
+   The lucamignatti fork has **unrelated history** with upstream (it
+   was started from a snapshot, not a clone), so the cherry-pick onto
+   `upstream/main` is the path we tried. The 9 macOS-specific commits
+   apply (with two trivial conflict resolutions that we resolved
+   correctly: a switch case in `zink_screen.c` and stale KK internals
+   that upstream has rewritten). The blocker we hit was a Mesa **build-
+   tooling** issue, not a code issue: Mesa's `meson.build` requires
+   `libclangCodeGen` from LLVM but Homebrew's llvm@22 ships it only as
+   `libclangCodeGen.a` (static) and meson's `cpp.find_library` failed
+   to pick it up despite the file being in `/opt/homebrew/opt/llvm/lib/`.
+   `--prefer-static` didn't help. Likely fix: build LLVM with shared
+   libs, or set `-Dprefer-static` plus a manual `-Dcpp_link_args` to
+   force the static linker to pick up `clangCodeGen.a` directly.
+
+2. **Capture an apitrace** of both Mac and Linux running the same
+   skirmish moment, diff the draw calls in the alpha pass for the
+   scorch timestamp.
+3. If draw counts differ, find why (BAR widget, engine path, particle
    replication under KK).
-3. If draw counts match, instrument per-fragment in RenderDoc / Metal
+4. If draw counts match, instrument per-fragment in RenderDoc / Metal
    capture to see what KK actually does at the blend stage.
-4. Open a KK issue with the apitrace if behaviour is genuinely
+5. Open a KK issue with the apitrace if behaviour is genuinely
    different from MoltenVK.
 
-**Upstream status.** Not tracked. **No downstream fix.**
+**Upstream status.** Not tracked against this specific symptom, but
+several relevant KK fixes have shipped in Mesa 26.1+ that have not been
+pulled into our local Mesa build. Updating the local Mesa is the most
+likely-to-help next step.
 
 ---
 

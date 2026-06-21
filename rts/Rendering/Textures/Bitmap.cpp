@@ -1757,6 +1757,27 @@ uint32_t CBitmap::CreateTexture(const GL::TextureCreationParams& tcp) const
 static void HandleDDSMipmap(GLenum target, int32_t numEmbeddedLevels, uint32_t minFilter)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+
+#ifdef __APPLE__
+	// macOS Zink+KosmicKrisp: glGenerateMipmap goes through an emulated
+	// vkCmdBlitImage path that produces black/garbage mip levels. The
+	// in-game symptom is BAR's GL4 decal atlases looking correct close-
+	// up but fading to opaque black squares as the camera zooms out
+	// (the GPU samples broken upper mip levels). For DDS textures that
+	// don't ship with embedded mipmaps, downgrade the filter to non-
+	// mipmapped LINEAR and cap GL_TEXTURE_MAX_LEVEL=0 so the GPU only
+	// ever reads mip 0. Texture quality at extreme distance is mildly
+	// worse, but no longer wrong.
+	if (numEmbeddedLevels == 0 && minFilter != GL_LINEAR && minFilter != GL_NEAREST) {
+		uint32_t safeFilter = GL_LINEAR;
+		if (minFilter == GL_NEAREST_MIPMAP_NEAREST || minFilter == GL_NEAREST_MIPMAP_LINEAR)
+			safeFilter = GL_NEAREST;
+		glTexParameteri(target, GL_TEXTURE_MIN_FILTER, safeFilter);
+		glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 0);
+		return;
+	}
+#endif
+
 	glTexParameteri(target, GL_TEXTURE_MIN_FILTER, minFilter);
 
 	if (numEmbeddedLevels == 0 && minFilter != GL_LINEAR && minFilter != GL_NEAREST)

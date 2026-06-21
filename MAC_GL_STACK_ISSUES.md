@@ -417,7 +417,87 @@ output. **No downstream fix.**
 
 ---
 
-## 7. Premature fragment discard optimisation (`KK_WORKAROUND_5`)
+## 7. Engine FX shader: dark-particle accumulation makes a solid black square
+
+**Status: workaround applied, true root cause not isolated.**
+
+**Symptom.** The commander beam-down scorch (BAR's `commander-spawn` CEG,
+specifically the `groundflash_scar` piece which is a `CBitmapMuzzleFlame`
+with `scar50` texture) renders as a **solid black square** that persists
+~13 s and fades — instead of as a textured scorch mark. Same family of
+artifact on weapon-impact decals if they go through the FX shader.
+
+**What we have confirmed.**
+- The black square IS rendered through `ProjFXFragProg.glsl` (FX shader
+  shared by particles, ground flashes, and `CBitmapMuzzleFlame`).
+  We confirmed by hard-coding `fragColor.rgb = vec3(1,0,0)` and seeing
+  the burn-mark area turn red.
+- **Fog is innocent.** Visualizing `fogFactor` showed 1.0 (no fog) at
+  every fragment of the scorch — at every zoom level. The fog math at
+  line 55 is a no-op for this case.
+- **The `SMOOTH_PARTICLES` soft-particle depth path is innocent.** We
+  disabled it via `CheckSoftenExt()` returning `false` on `__APPLE__`
+  (link-time, not a runtime flag) so the depth-buffer-copy sample is
+  never read. Black square persists with it off.
+- The scorch's per-fragment alpha is **low** (≈0.05–0.1, confirmed by
+  visualizing `fragColor.a` as the red channel). RGB brightness is also
+  low. So no single fragment is opaque-black; it's an **accumulation**.
+
+**Best-current hypothesis.** BAR's CEG content includes overlapping
+cross-plane `CBitmapMuzzleFlame` quads (3 per instance) plus the rest
+of the `commander-spawn` shower's particles, all hitting roughly the
+same screen pixels with low alpha + low RGB. Upstream Spring sets
+`BlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)` (premultiplied alpha) for
+the alpha pass — and the CEG colormaps feed **non-premultiplied** values
+to it. Each overlapping fragment dims `dst` by `(1 - α)`, and with many
+overlaps the destination compounds to near-zero → solid black square.
+
+**What we have not isolated.** Why this only manifests on macOS / Zink+KK
+and not on Linux/Windows is still unclear. Possible drivers of the
+divergence:
+- KK rasterises sub-pixel overlap differently, so more fragments per
+  pixel than on Mesa/D3D11.
+- Different MSAA / coverage behaviour.
+- A specific particle being drawn extra times (e.g. duplicate drawcalls).
+- The order of particle drawing (sort vs. unsorted) differing.
+
+**Engine-side workaround applied (2026-06-21).** Two parts, both
+`#ifdef __APPLE__`-guarded, in `rts/Rendering/Env/Particles/ProjectileDrawer.cpp`
+and `cont/.../ProjFXFragProg.glsl`:
+
+1. Swap the alpha-pass blend from `GL_ONE, GL_ONE_MINUS_SRC_ALPHA`
+   (premultiplied) to `GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA` (standard
+   alpha). Aligns the blend equation with BAR's non-premultiplied
+   colormaps.
+2. Add a `MAC_FX_DARK_SAFE` shader flag that scales the fragment's
+   alpha down only for **very dark** fragments
+   (`fragColor.a *= smoothstep(0.0, 0.2, lum) * 0.9 + 0.1`). This
+   prevents accumulated dst-dimming on dark-tinted particles without
+   hiding dim-but-coloured particles like smoke or fire glow.
+
+After the workaround the burn mark renders as a subtle dark scorch
+instead of a solid black square. Some particle effects (sparks /
+explosion glow) look slightly dimmer than Linux because we softened
+the contribution of very-dark fragments — there is no clean knob to
+keep all visuals identical without solving the actual KK behaviour.
+
+**Real-fix investigation plan** (not blocking; for someone who can
+afford the time):
+1. Capture an apitrace of both Mac and Linux running the same skirmish
+   moment, diff the draw calls in the alpha pass for the scorch
+   timestamp.
+2. If draw counts differ, find why (BAR widget, engine path, particle
+   replication under KK).
+3. If draw counts match, instrument per-fragment in RenderDoc / Metal
+   capture to see what KK actually does at the blend stage.
+4. Open a KK issue with the apitrace if behaviour is genuinely
+   different from MoltenVK.
+
+**Upstream status.** Not tracked. **No downstream fix.**
+
+---
+
+## 8. Premature fragment discard optimisation (`KK_WORKAROUND_5`)
 
 **Symptom (not confirmed in our build, but watch for).** Fragment
 shaders that `discard;` based on alpha-test (e.g. our `AlphaDiscard()`
@@ -437,7 +517,7 @@ designed.
 
 ---
 
-## 8. Other KK MSL-compiler workarounds (auto-applied, listed for reference)
+## 9. Other KK MSL-compiler workarounds (auto-applied, listed for reference)
 
 From `https://docs.mesa3d.org/drivers/kosmickrisp/workarounds.html`,
 all driver-internal:
@@ -462,7 +542,7 @@ around being skipped, file a Mesa issue.
 
 ---
 
-## 9. KosmicKrisp macOS version requirement — docs vs. reality
+## 10. KosmicKrisp macOS version requirement — docs vs. reality
 
 **Status: the docs and what we actually observe disagree.** Treat the
 "floor" version as unknown until someone tests on an older system.
@@ -502,7 +582,7 @@ Not a bug; a documentation/reality mismatch.
 
 ---
 
-## 10. Items we are **not** affected by but should keep an eye on
+## 11. Items we are **not** affected by but should keep an eye on
 
 - **`GL_MAX_TRANSFORM_FEEDBACK_BUFFERS` / indirect GL features missing**
   — per the gist, prevents some shader packs. RecoilEngine uses

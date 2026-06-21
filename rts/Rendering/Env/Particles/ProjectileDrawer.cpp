@@ -313,6 +313,12 @@ void CProjectileDrawer::Init() {
 	fxShader->SetFlag("SMOOTH_PARTICLES", CheckSoftenExt());
 	fxShader->SetFlag("DEPTH_CLIP01", globalRendering->supportClipSpaceControl);
 	fxShader->SetFlag("USE_TEXTURE_ARRAY", false);
+#ifdef __APPLE__
+	// See ProjFXFragProg.glsl — kill the alpha contribution of very-dark
+	// fragments so they don't dim the dst into a black square (see
+	// commander-spawn scorch). Brighter particles unaffected.
+	fxShader->SetFlag("MAC_FX_DARK_SAFE", true);
+#endif
 
 	using VAT = std::decay_t<decltype(CProjectile::GetPrimaryRenderBuffer())>::VertType;
 	fxShader->BindAttribLocations<VAT>();
@@ -334,7 +340,21 @@ void CProjectileDrawer::Init() {
 
 	sdbc = std::make_unique<ScopedDepthBufferCopy>(false);
 
+#ifdef __APPLE__
+	// macOS Zink+KosmicKrisp: the depth-buffer copy that soft particles
+	// sample (FBO::Blit(GL_DEPTH_BUFFER_BIT)) is unreliable on KK (see
+	// MAC_GL_STACK_ISSUES.md §2). When the depth values are wrong the
+	// SMOOTH_PARTICLES branch of ProjFXFragProg.glsl multiplies particle
+	// and ground-flash fragments by an arbitrary smoothstep factor that
+	// can drive them to opaque black. Visible symptom: the commander
+	// beam-down `groundflash_scar` and explosion scorches render as
+	// dark squares that fade with their normal CSimpleGroundFlash TTL
+	// instead of looking like textured scorches. Force soft-particles
+	// off on macOS until KK's depth-blit is fixed upstream.
+	EnableSoften(0);
+#else
 	EnableSoften(configHandler->GetInt("SoftParticles"));
+#endif
 }
 
 void CProjectileDrawer::Kill() {
@@ -440,10 +460,23 @@ void CProjectileDrawer::UpdateDrawFlags()
 bool CProjectileDrawer::CheckSoftenExt()
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+#ifdef __APPLE__
+	// macOS Zink+KosmicKrisp: FBO::Blit(GL_DEPTH_BUFFER_BIT) is the
+	// "blit is emulated and lies" path on KK. The soft-particle depth
+	// sample picks up garbage and ProjFXFragProg.glsl's SMOOTH_PARTICLES
+	// branch darkens fragments toward black — visible as the commander
+	// beam-down `groundflash_scar` and explosion scorches rendering as
+	// dark squares that fade with the ground-flash TTL. Pretending the
+	// extension is unsupported makes the engine compile the FX shader
+	// without SMOOTH_PARTICLES at link time, so the broken depth math
+	// is never reached.
+	return false;
+#else
 	static bool result =
 		FBO::IsSupported() &&
 		GLAD_GL_EXT_framebuffer_blit; //eval once
 	return result;
+#endif
 }
 
 void CProjectileDrawer::ParseAtlasTextures(

@@ -437,6 +437,16 @@ bool CGroundDecalHandler::ReloadDecalShaders() {
 	decalShader->SetFlag("HAVE_INFOTEX", true);
 	decalShader->SetFlag("SMF_WATER_ABSORPTION", true);
 	decalShader->SetFlag("USE_TEXTURE_ARRAY", atlasTex->GetTexTarget() == GL_TEXTURE_2D_ARRAY);
+#ifdef __APPLE__
+	// Mesa Zink + KosmicKrisp mistranslates the sampler2DShadow
+	// texture(shadowTex, ...) call inside GetShadowColor — same family
+	// of bug as the SMF terrain shader (see MAC_GL_STACK_ISSUES.md §4).
+	// Without this, the decal's `lightCol = diffuse * GetShadowColor +
+	// ambient` collapses to near-ambient (dark), then mainCol * lightCol
+	// renders explosion scorches and the commander-beam-down burn mark
+	// as solid black shapes instead of textured decals.
+	decalShader->SetFlag("MAC_DECAL_SAFE", true);
+#endif
 
 	decalShader->BindAttribLocations<GroundDecal>();
 

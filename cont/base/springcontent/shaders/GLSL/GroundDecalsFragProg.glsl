@@ -185,6 +185,10 @@ float BiasedZ(float z0, vec2 dZduv, vec2 offset) {
 }
 
 vec3 GetShadowColor(vec3 worldPos, float NdotL) {
+#ifdef MAC_DECAL_SAFE
+	// macOS Zink+KK workaround: see GroundDecalHandler.cpp / MAC_GL_STACK_ISSUES.md §4
+	return vec3(1.0);
+#endif
 #ifdef HAVE_SHADOWS
 	vec4 shadowPos = shadowMatrix * vec4(worldPos, 1.0);
 	shadowPos.xy += vec2(0.5);
@@ -326,7 +330,15 @@ vec4 GetColorByRelUV(vec2 uvTL, vec2 uvBL, vec2 uvTR, vec2 uvBR, vec4 relUV) {
 		mix(uvTR, uvBR, relUV.x),
 	relUV.y);
 
+#ifdef MAC_DECAL_SAFE
+	// Mesa Zink + KosmicKrisp generates incorrect mipmaps for the decal
+	// texture array — distant decals fade to black as the GPU samples
+	// lower mip levels. Force mip 0 until the underlying glGenerateMipmap
+	// issue is fixed upstream.
+	return textureLod(atlasTex, vec3(uv, layer), 0.0);
+#else
 	return texture(atlasTex, vec3(uv, layer));
+#endif
 }
 #else
 vec4 GetColorByRelUV(vec2 uvTL, vec2 uvBL, vec2 uvTR, vec2 uvBR, vec4 relUV) {
@@ -335,7 +347,11 @@ vec4 GetColorByRelUV(vec2 uvTL, vec2 uvBL, vec2 uvTR, vec2 uvBR, vec4 relUV) {
 		mix(uvTR, uvBR, relUV.x),
 	relUV.y);
 
+#ifdef MAC_DECAL_SAFE
+	return textureLod(atlasTex, uv, 0.0);
+#else
 	return texture(atlasTex, uv);
+#endif
 }
 #endif
 

@@ -69,4 +69,22 @@ void main() {
 
 	if (AlphaDiscard(fragColor.a))
 		discard;
+
+#ifdef MAC_FX_DARK_SAFE
+	// macOS workaround: under premultiplied-alpha blend
+	// (GL_ONE, GL_ONE_MINUS_SRC_ALPHA), each overlapping fragment dims dst
+	// by (1 - α). For BAR CEG content like commander-spawn's groundflash_scar
+	// (CBitmapMuzzleFlame with rgb fading toward 0), many overlapping dark
+	// fragments compound the destination to near-zero — solid black square.
+	// On macOS/Zink+KK this seems to be more aggressive than on Linux for
+	// reasons we haven't fully isolated (see MAC_GL_STACK_ISSUES.md §7).
+	// Workaround: when the fragment's luminance is essentially zero (dead-
+	// scar phase of the colormap), output a fully-transparent fragment so
+	// it contributes nothing to the framebuffer (1 - 0 = 1, dst unchanged).
+	// Brighter / coloured fragments are untouched and look identical.
+	float lum = dot(fragColor.rgb, vec3(0.299, 0.587, 0.114));
+	if (lum < 0.04) {
+		fragColor = vec4(0.0);
+	}
+#endif
 }

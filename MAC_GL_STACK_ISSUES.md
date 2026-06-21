@@ -481,46 +481,101 @@ explosion glow) look slightly dimmer than Linux because we softened
 the contribution of very-dark fragments — there is no clean knob to
 keep all visuals identical without solving the actual KK behaviour.
 
-**Real-fix investigation plan** (not blocking; for someone who can
-afford the time):
+**Final understanding (2026-06-21, after autonomous shader probing — see
+`MAC_AUTOTEST.md` for the harness).**
 
-1. **Update Mesa/KK.** Mesa 26.1 (2026-05-06) and main since then have
-   multiple Aitor Camacho KK fixes that overlap this area, in particular
-   "Force frag output component count to match render targets" and a
-   migration to Metal 4 pipelines. The local `~/mesa-native/` install
-   was built from the `lucamignatti/mesa` fork at commit `919e1d923bd`
-   (2026-01-02), well before any of those fixes. Rebuild Mesa from
-   current upstream main + lucamignatti's macOS bootstrap commits
-   and re-test before chasing engine-side root causes.
+A two-stage diagnostic with the auto-test loop gave clean answers:
 
-   The lucamignatti fork has **unrelated history** with upstream (it
-   was started from a snapshot, not a clone), so the cherry-pick onto
-   `upstream/main` is the path we tried. The 9 macOS-specific commits
-   apply (with two trivial conflict resolutions that we resolved
-   correctly: a switch case in `zink_screen.c` and stale KK internals
-   that upstream has rewritten). The blocker we hit was a Mesa **build-
-   tooling** issue, not a code issue: Mesa's `meson.build` requires
-   `libclangCodeGen` from LLVM but Homebrew's llvm@22 ships it only as
-   `libclangCodeGen.a` (static) and meson's `cpp.find_library` failed
-   to pick it up despite the file being in `/opt/homebrew/opt/llvm/lib/`.
-   `--prefer-static` didn't help. Likely fix: build LLVM with shared
-   libs, or set `-Dprefer-static` plus a manual `-Dcpp_link_args` to
-   force the static linker to pick up `clangCodeGen.a` directly.
+1. **Probe 1 — force `fragColor.rgb = vec3(1.0)`.** The black square
+   becomes a **saturated bright patch**. So the destination IS being
+   written to (blend math is normal) and the prior black came from the
+   *source* rgb being dark.
+2. **Probe 2 — visualise `fragColor.a` as red intensity.** The bug area
+   shows as **opaque bright red** — α is high (~1) on the scorch
+   fragments.
 
-2. **Capture an apitrace** of both Mac and Linux running the same
-   skirmish moment, diff the draw calls in the alpha pass for the
+So the per-fragment input to the blend at the bug location is
+`(dark_rgb, high_α)`. Under premultiplied alpha
+`dst' = src.rgb + dst*(1 - src.a)`, both factors push toward a dark
+result: `src.rgb` itself is dark, and `dst*(1-α)` ≈ 0. End state =
+solid dark patch.
+
+This is **actually working as the CEG content was specified** — the
+`groundflash_scar` CEG's colormap fades through `(0.1, 0.1, 0.1, 0.5)`
+to `(0.0, 0.0, 0.0, 0.1)`. On Linux+Mesa the BAR `gfx_decals_gl4`
+widget normally draws an overlay on top of this base sprite, masking
+the bug. On macOS that widget can't run (no geometry-shader support —
+see §5), so the base sprite is what we see.
+
+**Refined fix** (replacing the earlier "zero anything < 0.04 luminance"):
+
+```glsl
+#ifdef MAC_FX_DARK_SAFE
+    float lum = dot(fragColor.rgb, vec3(0.299, 0.587, 0.114));
+    fragColor.a *= smoothstep(0.0, 0.25, lum);  // dark fragments → low α
+    if (lum < 0.05 && fragColor.a > 0.1) {
+        fragColor = vec4(0.0);                  // dark+opaque → suppress
+    }
+#endif
+```
+
+- Bright fragments (`lum >= 0.25`): unchanged → fire/glow/explosions
+  render fully.
+- Mid-tone fragments: alpha scaled by `smoothstep(0, 0.25, lum)` →
+  smooth fade, no speckled edge.
+- Dark+opaque: nuked.
+
+**Verified visually with the autonomous test harness**: spawn-instant
+shows normal terrain, t=3s shows the bright teleport glow as intended,
+t=7s and t=14s show no dimming. The screenshots are in
+`build/screenshots/`.
+
+---
+
+**Mesa update test (2026-06-21).** We rebuilt Mesa from upstream main
+at the pre-Metal-4 commit (`9cbda0fd603`, 2026-06-04) — about 5 months
+newer than the lucamignatti snapshot — plus the 9 macOS bootstrap
+commits cherry-picked on top. Key build notes for future repro:
+
+- Used `~/WebstormProjects/mesa-kosmickrisp` source tree; branch
+  `upstream-with-mac-patches`.
+- Pre-Metal-4 base is required: anything past `6a25e3a0b05`
+  (2026-05-28 *"kk: Migrate to Metal 4 pipelines"*) requires Metal 4 /
+  `MTLGPUFamilyMetal4` / `MTL4ComputeCommandEncoder.h`, which only
+  exist on macOS 26 (Tahoe). We're on macOS 15 (Sequoia).
+- meson options:
+  `-Dplatforms=macos -Dvulkan-drivers=kosmickrisp -Dgallium-drivers=zink`
+  `-Dopengl=true -Degl=enabled -Dgles2=enabled -Dllvm=enabled`
+  `-Dshared-llvm=enabled -Dzstd=disabled`
+- Critical env: `LDFLAGS="-Wl,-lto_library,/opt/homebrew/Cellar/llvm/22.1.6/lib/libLTO.dylib"`
+  to work around the system `ld` using Apple's libLTO 17 (can't parse
+  LLVM 22 bitcode). And `-L/opt/homebrew/lib` for zstd.
+
+With this newer Mesa installed and `MAC_FX_DARK_SAFE` reverted,
+**the burn-mark + fire effects still rendered as solid black squares**.
+So the KK fragment-output-to-render-target fixes that shipped in
+Mesa 26.1 are **not** the cause of this bug. The workaround is
+genuinely required and remains in place.
+
+**Real-fix investigation plan** (after the Mesa update ruled out the
+obvious upstream candidate):
+
+1. Capture an apitrace (apitrace works on macOS via `apitrace trace
+   --api=egl ./spring`) of both Mac and Linux running the same
+   skirmish moment. Diff the draw calls in the alpha pass for the
    scorch timestamp.
-3. If draw counts differ, find why (BAR widget, engine path, particle
+2. If draw counts differ, find why (BAR widget, engine path, particle
    replication under KK).
-4. If draw counts match, instrument per-fragment in RenderDoc / Metal
-   capture to see what KK actually does at the blend stage.
-5. Open a KK issue with the apitrace if behaviour is genuinely
-   different from MoltenVK.
+3. If draw counts match, capture via Xcode's Metal frame debugger to
+   see what KK actually does at the blend / fragment-output stage. The
+   apitrace + Metal capture together identify whether the bug is in
+   Zink's GL→Vulkan translation, KK's Vulkan→Metal translation, or
+   Metal's own rasterisation.
+4. Open a KK issue with the apitrace + Metal capture if behaviour is
+   genuinely different from what Vulkan-on-MoltenVK would produce.
 
-**Upstream status.** Not tracked against this specific symptom, but
-several relevant KK fixes have shipped in Mesa 26.1+ that have not been
-pulled into our local Mesa build. Updating the local Mesa is the most
-likely-to-help next step.
+**Upstream status.** Not tracked. The Mesa 26.1 KK fragment-output
+fixes are confirmed NOT to address this. No downstream fix.
 
 ---
 

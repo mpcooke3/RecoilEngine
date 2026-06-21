@@ -231,7 +231,26 @@ namespace CNamedTextures {
 
 		if (!bitmap.Load(filename, 1.0f, 4u, 0u)) {
 			LOG_L(L_WARNING, "Couldn't find texture \"%s\"!", filename.c_str());
-			GenInsertTex(texName, texInfo, false, false, true, false);
+			// Generate a deterministic 1x1 black-with-alpha=1 fallback so
+			// shaders sampling this name don't pull undefined memory. On
+			// Mesa/Linux a sampler bound to texID 0 returns (0,0,0,1) which
+			// usually masks the bug, but under Zink+KosmicKrisp on Apple it
+			// reads garbage and trees / features whose model references a
+			// missing texture render as random solid colors.
+			GLuint fbID = 0;
+			glGenTextures(1, &fbID);
+			glBindTexture(GL_TEXTURE_2D, fbID);
+			const uint8_t blackPixel[4] = { 0, 0, 0, 255 };
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, blackPixel);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			TexInfo fbTexInfo;
+			fbTexInfo.id = fbID;
+			fbTexInfo.xsize = 1;
+			fbTexInfo.ysize = 1;
+			fbTexInfo.texType = GL_TEXTURE_2D;
+			fbTexInfo.alpha = true;
+			GenInsertTex(texName, fbTexInfo, false, false, true, false);
 			return false;
 		}
 

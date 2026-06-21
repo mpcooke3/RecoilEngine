@@ -107,6 +107,12 @@ void SMFRenderStateGLSL::Update(
 
 			if (isAdv) {
 				glslShaders[n]->SetFlag("SMF_ADV_SHADING",                      true);
+#ifdef __APPLE__
+				// macOS Zink/KK workaround for white-terrain bug: route the
+				// Adv-shading fragment math through a path that avoids
+				// constructs Zink seems to mistranslate. See MAC_GL_STACK_ISSUES.md §4.
+				glslShaders[n]->SetFlag("MAC_SMF_ADV_SAFE",                     true);
+#endif
 				glslShaders[n]->SetFlag("SMF_VOID_WATER",                       mapRendering->voidWater);
 				glslShaders[n]->SetFlag("SMF_VOID_GROUND",                      mapRendering->voidGround);
 				glslShaders[n]->SetFlag("SMF_SPECULAR_LIGHTING",                smfMap->GetSpecularTexture() != 0);

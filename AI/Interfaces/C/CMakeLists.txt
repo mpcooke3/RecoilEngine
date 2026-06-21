@@ -59,6 +59,21 @@ macro    (configure_native_skirmish_ai mySourceDirRel_var additionalSources_var 
 		install(DIRECTORY "${myDir}/data/" DESTINATION "${myInstDataDir}" FILES_MATCHING PATTERN REGEX "AI(Info|Options)\\.lua$" EXCLUDE PATTERN "*")
 		# Install the library
 		install(TARGETS   ${myTarget}      DESTINATION "${myInstLibsDir}")
+
+		# Also copy data files (AIInfo.lua, AIOptions.lua) into the build
+		# tree alongside the compiled .dylib so the in-tree spring binary
+		# can discover them without a separate `cmake --install` step.
+		# Without this, AILibraryManager::FetchSkirmishAILibrary logs
+		# "unknown skirmish AI  specified" and the AI never loads.
+		foreach(_aiDataFile AIInfo.lua AIOptions.lua)
+			if(EXISTS "${myDir}/data/${_aiDataFile}")
+				add_custom_command(TARGET ${myTarget} POST_BUILD
+					COMMAND ${CMAKE_COMMAND} -E copy_if_different
+						"${myDir}/data/${_aiDataFile}"
+						"${CMAKE_CURRENT_BINARY_DIR}/data/${_aiDataFile}"
+					COMMENT "Copying ${_aiDataFile} to ${myName}/data/")
+			endif()
+		endforeach()
 	endif (BUILD_THIS_SKIRMISHAI)
 endmacro (configure_native_skirmish_ai mySourceDirRel_var additionalSources_var additionalCompileFlags_var additionalLibraries_var)
 

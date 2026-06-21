@@ -38,7 +38,14 @@ namespace log_file {
 			return ((level >= minLevel) && (sections.empty() || (sections.find("," + std::string(section) + ",") != std::string::npos)));
 		}
 		bool FlushOnWrite(int level) const {
+#ifdef __APPLE__
+			// macOS port: always flush, so the last seconds of log
+			// survive a hung/force-killed spring while we debug.
+			(void)level;
+			return true;
+#else
 			return (level >= flushLevel);
+#endif
 		}
 
 	private:

@@ -2812,6 +2812,11 @@ int LuaOpenGL::EdgeFlag(lua_State* L)
  * @param x2 number
  * @param y2 number
  */
+#ifdef __APPLE__
+// Declared further down (next to PolygonMode). See comment there.
+extern GLenum sMacAppleLastPolygonMode;
+#endif
+
 int LuaOpenGL::Rect(lua_State* L)
 {
 	CheckDrawingEnabled(L, __func__);
@@ -2819,6 +2824,19 @@ int LuaOpenGL::Rect(lua_State* L)
 	const float y1 = luaL_checkfloat(L, 2);
 	const float x2 = luaL_checkfloat(L, 3);
 	const float y2 = luaL_checkfloat(L, 4);
+#ifdef __APPLE__
+	if (sMacAppleLastPolygonMode == GL_LINE) {
+		// Emulate wireframe rect by emitting 4 line segments. See the
+		// comment above PolygonMode for why this is needed on macOS.
+		glBegin(GL_LINE_LOOP);
+		glVertex2f(x1, y1);
+		glVertex2f(x2, y1);
+		glVertex2f(x2, y2);
+		glVertex2f(x1, y2);
+		glEnd();
+		return 0;
+	}
+#endif
 	glRectf(x1, y1, x2, y2);
 	return 0;
 }
@@ -3648,11 +3666,29 @@ int LuaOpenGL::AlphaToCoverage(lua_State* L)
  * `GL.LINE`, and `GL.FILL`. The initial value is `GL.FILL` for both front- and
  * back-facing polygons.
  */
+#ifdef __APPLE__
+// Track the most recently requested polygon mode so gl.Rect can fall
+// back to a GL_LINE_LOOP when the platform's Vulkan device (Apple Metal
+// via KosmicKrisp) doesn't support `fillModeNonSolid` and therefore
+// can't honour glPolygonMode(GL_LINE). Without this, widgets that draw
+// "wireframe rectangles" by calling
+//     gl.PolygonMode(GL.FRONT_AND_BACK, GL.LINE); gl.Rect(...)
+// render a solid filled rect instead of the intended outline (e.g.
+// BAR's drag-selection box shows up as a giant white block).
+GLenum sMacAppleLastPolygonMode = GL_FILL;  // file-scope, see fwd-decl above
+#endif
+
 int LuaOpenGL::PolygonMode(lua_State* L)
 {
 	CheckDrawingEnabled(L, __func__);
 	const GLenum face = (GLenum)luaL_checkint(L, 1);
 	const GLenum mode = (GLenum)luaL_checkint(L, 2);
+#ifdef __APPLE__
+	sMacAppleLastPolygonMode = mode;
+	// Still call through — at FILL it's a real state change; at LINE
+	// Vulkan ignores it (and warns), but that's harmless. The behaviour
+	// fix happens in the Rect / Vertex paths below.
+#endif
 	glPolygonMode(face, mode);
 	return 0;
 }

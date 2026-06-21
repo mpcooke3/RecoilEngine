@@ -375,11 +375,23 @@ void main() {
 	#ifndef DEFERRED_MODE
 		#ifdef SMF_ADV_SHADING
 		{
+		#ifdef MAC_SMF_ADV_SAFE
+			// macOS Zink/KK workaround: shadow2DProj appears to return out-
+			// of-range values under KosmicKrisp on Apple Silicon, which when
+			// multiplied through GetShadeInt's ambient+diffuse formula
+			// saturates fragColor to white. Forcing shadowCoeff to "no
+			// shadow" sidesteps the bug; terrain is unshadowed but lit
+			// correctly. See MAC_GL_STACK_ISSUES.md §4.
+			vec4 shadeInt = GetShadeInt(cosAngleDiffuse, vec3(1.0), diffuseCol.a);
+			fragColor.rgb = (diffuseCol.rgb + detailCol.rgb) * shadeInt.rgb;
+			fragColor.a = shadeInt.a;
+		#else
 			// GroundMaterialAmbientDiffuseColor * LightAmbientDiffuseColor
 			vec4 shadeInt = GetShadeInt(cosAngleDiffuse, shadowCoeff, diffuseCol.a);
 
 			fragColor.rgb = (diffuseCol.rgb + detailCol.rgb) * shadeInt.rgb;
 			fragColor.a = shadeInt.a;
+		#endif
 		}
 		#else // SMF_ADV_SHADING
 		{
@@ -407,7 +419,7 @@ void main() {
 			specularCol = vec4(groundSpecularColor, 1.0);
 		#endif // SMF_SPECULAR_LIGHTING
 
-		#ifndef DEFERRED_MODE
+		#if !defined(DEFERRED_MODE) && !defined(MAC_SMF_ADV_SAFE)
 			// sun specular lighting contribution
 			#ifdef SMF_SPECULAR_LIGHTING
 				float specularExp  = specularCol.a * 16.0;
@@ -420,7 +432,7 @@ void main() {
 				  specularInt *= shadowCoeff;
 
 			fragColor.rgb += specularInt;
-		#endif // DEFERRED_MODE
+		#endif // !DEFERRED_MODE && !MAC_SMF_ADV_SAFE
 	#endif // SMF_ADV_SHADING
 
 

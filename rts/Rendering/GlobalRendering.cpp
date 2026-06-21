@@ -41,6 +41,10 @@
 #include <SDL_syswm.h>
 #include <SDL_rect.h>
 
+#ifdef __APPLE__
+#include "Rendering/MacGLBackend.h"
+#endif
+
 #include "System/Misc/TracyDefs.h"
 
 CONFIG(bool, DebugGL).defaultValue(false).description("Enables GL debug-context and output. (see GL_ARB_debug_output)");
@@ -425,7 +429,14 @@ SDL_Window* CGlobalRendering::CreateSDLWindow(const char* title) const
 	//   SDL_WINDOW_FULLSCREEN_DESKTOP for "fake" fullscreen that takes the size of the desktop;
 	//   and 0 for windowed mode.
 
+#ifdef __APPLE__
+	// macOS GL path goes through Mesa+EGL+Metal via MacGL; the SDL window must
+	// be Metal-flagged (CAMetalLayer) and must NOT advertise SDL_WINDOW_OPENGL,
+	// otherwise SDL tries to attach an Apple NSOpenGLContext to it.
+	uint32_t sdlFlags  = (SDL_WINDOW_METAL  | SDL_WINDOW_RESIZABLE);
+#else
 	uint32_t sdlFlags  = (SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+#endif
 	         sdlFlags |= (borderless_ ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_FULLSCREEN) * fullScreen_;
 	         sdlFlags |= (SDL_WINDOW_BORDERLESS * borderless_);
 
@@ -461,6 +472,15 @@ SDL_Window* CGlobalRendering::CreateSDLWindow(const char* title) const
 
 SDL_GLContext CGlobalRendering::CreateGLContext(const int2& minCtx)
 {
+#ifdef __APPLE__
+	// On macOS we never use Apple's NSOpenGLContext; MacGL drives a Mesa EGL
+	// pbuffer context (Zink -> Vulkan -> KosmicKrisp -> Metal). Return a
+	// non-null sentinel so the engine's null-checks pass; nothing dereferences
+	// the SDL_GLContext we hand back.
+	if (!MacGL::Init(sdlWindow, minCtx.x, minCtx.y))
+		return nullptr;
+	return reinterpret_cast<SDL_GLContext>(0x1);
+#endif
 	SDL_GLContext newContext = nullptr;
 
 	constexpr int2 glCtxs[] = {{2, 0}, {2, 1},  {3, 0}, {3, 1}, {3, 2}, {3, 3},  {4, 0}, {4, 1}, {4, 2}, {4, 3}, {4, 4}, {4, 5}, {4, 6}};
@@ -587,7 +607,11 @@ bool CGlobalRendering::CreateWindowAndContext(const char* title)
 	if ((glContext = CreateGLContext(minCtx)) == nullptr)
 		return false;
 
+#ifdef __APPLE__
+	gladLoadGLLoader(reinterpret_cast<GLADloadproc>(MacGL::ProcAddress));
+#else
 	gladLoadGL();
+#endif
 	GLX::Load(sdlWindow);
 
 	if (!CheckGLContextVersion(minCtx)) {
@@ -610,7 +634,24 @@ bool CGlobalRendering::CreateWindowAndContext(const char* title)
 
 
 void CGlobalRendering::MakeCurrentContext(bool clear) const {
+#ifdef __APPLE__
+	// On macOS our `glContext` is just a sentinel (0x1) — the actual GL
+	// state lives in an EGL pbuffer managed by MacGL. Routing through
+	// SDL_GL_MakeCurrent here would unbind that EGL context and leave
+	// the calling thread with no current GL context, causing every
+	// subsequent draw to silently no-op (which is exactly the "black
+	// screen after load" symptom).
+	if (clear) {
+		// Best-effort release; eglMakeCurrent with NO_SURFACE/NO_CONTEXT
+		// is the equivalent of detaching from the thread.
+		// We don't expose a "release" helper since the engine never needs
+		// to actually unbind on macOS — just no-op here.
+		return;
+	}
+	MacGL::MakeCurrent();
+#else
 	SDL_GL_MakeCurrent(sdlWindow, clear ? nullptr : glContext);
+#endif
 }
 
 
@@ -621,10 +662,17 @@ void CGlobalRendering::DestroyWindowAndContext() {
 	WindowManagerHelper::SetIconSurface(sdlWindow, nullptr);
 	SetWindowInputGrabbing(false);
 
+#ifdef __APPLE__
+	// glContext is a sentinel on macOS - the real EGL+Metal state is owned by
+	// MacGL. Tear it down before SDL destroys the window so the SDL_Renderer
+	// it created is released cleanly.
+	MacGL::Shutdown();
+#else
 	SDL_GL_MakeCurrent(sdlWindow, nullptr);
+#endif
 	SDL_DestroyWindow(sdlWindow);
 
-	#if !defined(HEADLESS)
+	#if !defined(HEADLESS) && !defined(__APPLE__)
 	if (glContext)
 		SDL_GL_DeleteContext(glContext);
 	#endif
@@ -700,7 +748,11 @@ void CGlobalRendering::SwapBuffers(bool allowSwapBuffers, bool clearErrors)
 			}
 		#endif
 		
+#ifdef __APPLE__
+		MacGL::Present();
+#else
 		SDL_GL_SwapWindow(sdlWindow);
+#endif
 
 		#ifdef _WIN32
 			if (forceDWMFlush == 2){ 
@@ -1694,6 +1746,15 @@ void CGlobalRendering::UpdateGLGeometry()
 	UpdateViewPortGeometry();
 	UpdatePixelGeometry();
 	UpdateScreenMatrices();
+
+#ifdef __APPLE__
+	// Our Mesa EGL pbuffer is the engine's drawable. The engine has just
+	// recomputed its viewport to match the (possibly resized) SDL window —
+	// resize the pbuffer + the SDL presentation texture to match, otherwise
+	// engine-rendered HUD/overlays beyond the original pbuffer dimensions
+	// fall off the readback and disappear (visible when window is maximized).
+	MacGL::Resize(winSizeX, winSizeY);
+#endif
 
 	LOG("[GR::%s][2] winSize=<%d,%d>", __func__, winSizeX, winSizeY);
 }

@@ -58,6 +58,24 @@ endif (UNIX)
 if (APPLE)
 	find_library(COREFOUNDATION_LIBRARY Foundation)
 	list(APPEND engineLibraries ${COREFOUNDATION_LIBRARY})
+
+	# macOS GL goes through Mesa+Zink+KosmicKrisp at runtime. We link the
+	# engine against Mesa's libEGL (used by MacGLBackend.cpp for context
+	# creation), and embed its directory in the binary's rpath so it loads
+	# at runtime alongside libgallium / libvulkan_kosmickrisp / dri drivers.
+	if (NOT DEFINED MESA_NATIVE_DIR)
+		set(MESA_NATIVE_DIR "$ENV{HOME}/mesa-native" CACHE PATH "Mesa+Zink+KosmicKrisp install dir")
+	endif()
+	if (EXISTS "${MESA_NATIVE_DIR}/include/EGL/egl.h"
+	    AND EXISTS "${MESA_NATIVE_DIR}/lib/libEGL.dylib")
+		include_directories("${MESA_NATIVE_DIR}/include")
+		list(APPEND engineLibraries "${MESA_NATIVE_DIR}/lib/libEGL.dylib")
+		# Runtime search path for Mesa dylibs (libgallium, libGLESv2, etc.)
+		list(APPEND CMAKE_BUILD_RPATH "${MESA_NATIVE_DIR}/lib")
+		list(APPEND CMAKE_INSTALL_RPATH "${MESA_NATIVE_DIR}/lib")
+	else()
+		message(FATAL_ERROR "MESA_NATIVE_DIR=${MESA_NATIVE_DIR} does not contain EGL/egl.h and libEGL.dylib (build Mesa+Zink+KosmicKrisp first)")
+	endif()
 endif (APPLE)
 
 list(APPEND engineLibraries squish rgetc1)

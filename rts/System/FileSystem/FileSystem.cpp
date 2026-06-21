@@ -670,13 +670,47 @@ namespace Impl {
 				const auto entryPathFnStr = entry.path().filename().generic_u8string();
 
 				if (spring::regex_match(StoreUTF8AsString(entryPathFnStr), regexPattern)) {
-					auto entryPathStr = entry.path().generic_u8string();
+					// Match the legacy posix FindFiles behaviour: return a
+					// path that is the caller-provided `dir` argument joined
+					// with the entry's path *relative to* the iterator root —
+					// NOT the full absolute filesystem path.
+					//
+					// The std::filesystem rewrite was emitting absolute paths
+					// (entry.path() is absolute when the iterator's root is
+					// absolute), which silently broke callers that depend on
+					// the result being prefixed with the input dir argument.
+					// Two concrete failures we hit:
+					//   * BAR's gui_loadgame.lua does
+					//       string.sub(path, SAVE_DIR_LENGTH, -5)
+					//     expecting "Saves/<name>.lua" → "<name>". With
+					//     absolute paths it chopped the wrong chars and the
+					//     save game would refuse to load.
+					//   * RapidHandler.cpp uses
+					//       std::filesystem::path{file}.parent_path()
+					//                                  .parent_path()
+					//                                  .filename()
+					//     on each result expecting "rapid/<domain>/<repo>/
+					//     versions.gz" so it can extract the domain. With
+					//     absolute paths the wrong segment is taken.
+					//
+					// Important: for recursive iteration we must preserve the
+					// subdirectory portion of the path, otherwise nested files
+					// collapse to look like they live in the top level (and
+					// engine code that interprets the path structure breaks,
+					// e.g. rapid-tag resolution which lives in
+					// `rapid/<domain>/<repo>/versions.gz`).
+					std::error_code ec;
+					auto relPath = std::filesystem::relative(entry.path(), dir, ec);
+					std::string suffix = ec
+						? Impl::StoreUTF8AsString(entryPathFnStr)
+						: Impl::StoreUTF8AsString(relPath.generic_u8string());
+					std::string entryPathStr = dirStr + suffix;
 
-					// the previous convention to add a trailing slash
-					if (isDir && !entryPathStr.empty() && entryPathStr.back() != u8'/') {
-						entryPathStr += u8'/';
+					// preserve the previous trailing-slash convention for dirs
+					if (isDir && !entryPathStr.empty() && entryPathStr.back() != '/') {
+						entryPathStr += '/';
 					}
-					matches.emplace_back(Impl::StoreUTF8AsString(entryPathStr));
+					matches.emplace_back(std::move(entryPathStr));
 				}
 			}
 		}, std::move(dirIterator));

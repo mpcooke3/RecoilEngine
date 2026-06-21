@@ -393,6 +393,22 @@ void RmlGui::RenderFrame()
 	if (state->contexts.empty())
 		return;
 
+#ifdef __APPLE__
+	// macOS port: the GL3 renderer's EndFrame() draws a fullscreen
+	// passthrough quad with premultiplied-alpha blending to composite
+	// the RmlUi layer over the default framebuffer. Under Mesa Zink +
+	// KosmicKrisp that blend doesn't behave correctly and the quad
+	// effectively overwrites the world to opaque black. See MAC_PORT.md.
+	//
+	// As a stop-gap, skip RmlUi rendering entirely on macOS. We lose
+	// any RmlUi-driven menus / overlays but recover the entire 3D scene
+	// + non-RmlUi UI (which is everything important for in-game). A
+	// proper fix is to investigate why the GL3_Recoil blend path
+	// produces opaque-black under Zink and route through a corrected
+	// composite step instead.
+	return;
+#endif
+
 	RmlGui::BeginFrame();
 	// render back-to-front so that index 0 is atop index 1 and so on
 	for (auto& context: std::ranges::reverse_view(state->contexts)) {

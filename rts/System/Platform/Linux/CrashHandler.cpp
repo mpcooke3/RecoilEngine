@@ -1043,6 +1043,33 @@ namespace CrashHandler
 			LOG("see /proc/sys/kernel/core_pattern where it gets written");
 			return;
 		}
+
+#ifdef __APPLE__
+		// macOS: do NOT install Spring's `HandleSignal` catcher.
+		//
+		// The handler uses substantial stack — large local arrays,
+		// libc++ string ops, popen calls into `atos`. It's also installed
+		// without `SA_ONSTACK` / a per-thread `sigaltstack`. When a signal
+		// arrives on a thread with a small stack (e.g. the std::async
+		// "pregame" worker that runs LoadGameStartInfo / CGZFileHandler
+		// reads), the handler's frame allocation triggers
+		// `__chkstk_darwin` → guard-page fault → *the handler is invoked
+		// again*, locking the process in an unkillable signal ping-pong.
+		// Concrete repro: clicking "Load Game" in the BAR lobby, which
+		// fires Spring.Reload → new pregame thread → save-file read
+		// → some recoverable signal (e.g. SIGPIPE from the now-stale
+		// spring-launcher bridge socket) → infinite recursion → "Waiting
+		// for game to start" forever.
+		//
+		// macOS already provides a perfectly good default for real
+		// faults (Crash Reporter saves a sample + .crash report). For
+		// the one signal we actually want behaviour-modified, SIGPIPE,
+		// just ignore it so write() returns EPIPE.
+		signal(SIGPIPE, SIG_IGN);
+		std::set_new_handler(NewHandler);
+		return;
+#endif
+
 		const sigaction_t& sa = GetSigAction(&HandleSignal);
 
 		sigaction(SIGSEGV, &sa, nullptr); // segmentation fault

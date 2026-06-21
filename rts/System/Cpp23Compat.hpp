@@ -18,8 +18,8 @@ namespace Recoil {
 	class enumerate_view {
 		Range range_;
 	public:
-		explicit enumerate_view(Range&& r) : range_(std::forward<Range>(r)) {}
-		explicit enumerate_view(const Range& r) : range_(r) {}
+		template<typename R>
+		explicit enumerate_view(R&& r) : range_(std::forward<R>(r)) {}
 
 		struct iterator {
 			using inner_iter = decltype(std::begin(std::declval<Range&>()));

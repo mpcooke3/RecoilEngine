@@ -169,18 +169,65 @@ int CPreGame::KeyPressed(int keyCode, int scanCode, bool isRepeat)
 	return 0;
 }
 
+#ifdef __APPLE__
+// macOS std::async / std::thread give every new thread the libpthread
+// default of 512 KiB of stack. That's enough for the small amount of
+// work the pregame worker normally does, EXCEPT when loading a save
+// file: CCregLoadSaveHandler::LoadGameStartInfo → CGZFileHandler::
+// CGZFileHandler → ReadToBuffer chains through several templated
+// wrappers and a couple of kilobyte-sized local buffers, and the
+// frame allocation tips the stack pointer past the guard page on
+// macOS — Crash Reporter shows:
+//
+//   EXC_BAD_ACCESS (SIGBUS) KERN_PROTECTION_FAILURE
+//   stack guard for thread 28 (pregame) hit in ___chkstk_darwin
+//   inside CGZFileHandler::ReadToBuffer
+//
+// On Linux the default is 8 MiB so the issue never surfaces. Fix:
+// spawn the pregame worker on a dedicated pthread with 8 MiB of stack
+// (matching Linux). The std::future / pendingTask hand-off is kept by
+// using std::packaged_task as the bridge to the original
+// `pendingTask = std::future<void>` field.
+#include <pthread.h>
+#include <future>
+struct MacPregameLaunch {
+	std::packaged_task<void()> task;
+};
+extern "C" {
+static void* mac_pregame_thread(void* arg) {
+	auto* launch = static_cast<MacPregameLaunch*>(arg);
+	launch->task();
+	delete launch;
+	return nullptr;
+}
+}
+#endif
+
 void CPreGame::AsyncExecute(CPreGame::AsyncExecFuncType execFunc, const std::string& argument)
 {
-	pendingTask = std::async(std::launch::async,
-		[execFunc, argument/*copy the argument explicitly*/, this]() {
-			const auto InitStuffAndExecute = [execFunc, argument/*copy the argument explicitly*/, this]() {
-				Threading::SetThreadName("pregame");
-				streflop::streflop_init<streflop::Simple>();
-				std::invoke(execFunc, this, argument);
-			};
-			std::invoke(InitStuffAndExecute);
-		}
-	);
+	auto body = [execFunc, argument/*copy the argument explicitly*/, this]() {
+		const auto InitStuffAndExecute = [execFunc, argument/*copy the argument explicitly*/, this]() {
+			Threading::SetThreadName("pregame");
+			streflop::streflop_init<streflop::Simple>();
+			std::invoke(execFunc, this, argument);
+		};
+		std::invoke(InitStuffAndExecute);
+	};
+
+#ifdef __APPLE__
+	// see big comment above
+	auto* launch = new MacPregameLaunch{std::packaged_task<void()>(std::move(body))};
+	pendingTask = launch->task.get_future();
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setstacksize(&attr, 8 * 1024 * 1024); // 8 MiB
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	pthread_t tid;
+	pthread_create(&tid, &attr, &mac_pregame_thread, launch);
+	pthread_attr_destroy(&attr);
+#else
+	pendingTask = std::async(std::launch::async, std::move(body));
+#endif
 }
 
 bool CPreGame::Draw()

@@ -86,8 +86,25 @@ rm -f "$CONFIG.bak"
 mkdir -p "$BAR_DIR/build/screenshots"
 find "$BAR_DIR/build/screenshots" -name "*dbg-${TEST}*.png" -delete 2>/dev/null || true
 
+# Always disable all DBG Test widgets when this script exits so that a
+# subsequent normal-launch (via the Electron launcher) doesn't accidentally
+# fire one of them. BAR rewrites BYAR.lua at end-of-run with whatever order
+# values are in effect at the time, so we re-disable after the run, then
+# again on script exit just in case.
+disable_all_dbg_widgets() {
+    [ -f "$CONFIG" ] || return 0
+    for w in "Auto Screenshot (mac debug)" "DBG Test Trees" "DBG Test Explosions" "DBG Test Selection"; do
+        sed -i.bak "s/\[\"$w\"\] = [0-9]*,/[\"$w\"] = 0,/" "$CONFIG"
+    done
+    rm -f "$CONFIG.bak"
+}
+trap disable_all_dbg_widgets EXIT
+
 # Delegate to the underlying spring-launch script
 "$BAR_DIR/tools/self-test-trace.sh" "$DURATION"
+
+# Explicitly disable after the run (the trap will also fire on script exit)
+disable_all_dbg_widgets
 
 # Report what we got
 echo "[run-test] --------- $TEST shots ---------"

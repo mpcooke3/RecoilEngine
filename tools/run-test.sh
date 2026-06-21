@@ -36,14 +36,18 @@ case "$TEST" in
         ;;
     trees)
         WIDGET_NAME="DBG Test Trees"
-        DESC="trees on Ravaged Remake"
+        DESC="live + dead tree features"
         ;;
     explosions)
         WIDGET_NAME="DBG Test Explosions"
         DESC="first explosion (natural or forced via cheat)"
         ;;
+    selection)
+        WIDGET_NAME="DBG Test Selection"
+        DESC="unit selection indicator (unselected / all-selected / one-selected)"
+        ;;
     *)
-        echo "Unknown test '$TEST' — choose scorch | trees | explosions"
+        echo "Unknown test '$TEST' — choose scorch | trees | explosions | selection"
         exit 2
         ;;
 esac
@@ -61,7 +65,7 @@ if ! have_entry "$WIDGET_NAME"; then
 fi
 
 # Disable all dbg_test_* widgets, then enable the chosen one.
-for w in "Auto Screenshot (mac debug)" "DBG Test Trees" "DBG Test Explosions"; do
+for w in "Auto Screenshot (mac debug)" "DBG Test Trees" "DBG Test Explosions" "DBG Test Selection"; do
     sed -i.bak "s/\[\"$w\"\] = [0-9]*,/[\"$w\"] = 0,/" "$CONFIG"
 done
 sed -i.bak "s/\[\"$WIDGET_NAME\"\] = 0,/[\"$WIDGET_NAME\"] = 1,/" "$CONFIG"

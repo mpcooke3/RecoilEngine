@@ -11,6 +11,7 @@ clean shutdown.
 | `scorch`     | commander beam-down + dark scorch CEG (the original black-square bug) | `dbg_auto_screenshot.lua` | ~30 s |
 | `trees`      | first tree feature on the map (Ravaged Remake's dead elms) | `dbg_test_trees.lua` | ~25 s |
 | `explosions` | a cheat-spawned fusion-reactor self-destruct (the explosion CEG path) | `dbg_test_explosions.lua` | ~40 s |
+| `selection` | a cluster of cheat-spawned bots, captured unselected / all-selected / single-selected (also incidentally captures the "bright blue trees" repro) | `dbg_test_selection.lua` | ~25 s |
 
 ## Running a test
 
